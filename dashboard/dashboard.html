@@ -64,24 +64,20 @@
 
 <h1>💰 Dashboard Financeiro</h1>
 
-<!-- ✅ USUÁRIO LOGADO -->
 <h2 id="usuarioNome">👤 Não logado</h2>
 
-<!-- ✅ LOGIN -->
 <div class="controls">
   <input id="email" placeholder="Email">
   <input id="senha" type="password" placeholder="Senha">
   <button onclick="login()">Entrar</button>
 </div>
 
-<!-- ✅ ADD RENDA -->
 <h2>💵 Nova Renda</h2>
 <div class="controls">
   <input id="valorRenda" type="number" placeholder="Valor">
   <button onclick="addRenda()">Adicionar Renda</button>
 </div>
 
-<!-- ✅ ADD DESPESA -->
 <h2>➕ Nova Despesa</h2>
 <div class="controls">
   <input id="descricao" placeholder="Descrição">
@@ -97,12 +93,10 @@
   <button onclick="addDespesa()">Adicionar</button>
 </div>
 
-<!-- ✅ BOTÃO ATUALIZAR -->
 <div class="controls">
   <button onclick="carregarDashboard()">Atualizar</button>
 </div>
 
-<!-- ✅ CARDS -->
 <div class="cards">
   <div class="card">
     <h3>Despesas</h3>
@@ -131,7 +125,12 @@
 
 <script>
 
-// ✅ TOKEN AUTOMÁTICO
+// ✅ 🔥 MUDAR AQUI QUANDO SUBIR BACKEND
+
+//const API = "http://127.0.0.1:8000";
+// EXEMPLO ONLINE:
+const API = "https://seu-backend.onrender.com";
+
 let token = localStorage.getItem("token") || "";
 
 let pizzaChart, barraChart, rendaChart;
@@ -145,7 +144,7 @@ async function login() {
   form.append("username", username);
   form.append("password", password);
 
-  const res = await fetch("http://127.0.0.1:8000/auth/login", {
+  const res = await fetch(API + "/auth/login", {
     method: "POST",
     body: form
   });
@@ -164,13 +163,13 @@ async function login() {
 async function addRenda() {
 
   if (!token) {
-    alert("Faça login primeiro ❗");
+    alert("Faça login primeiro");
     return;
   }
 
   const valor = parseFloat(document.getElementById("valorRenda").value);
 
-  await fetch("http://127.0.0.1:8000/rendas", {
+  await fetch(API + "/rendas", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -184,7 +183,6 @@ async function addRenda() {
   });
 
   alert("Renda adicionada ✅");
-
   carregarDashboard();
 }
 
@@ -192,7 +190,7 @@ async function addRenda() {
 async function addDespesa() {
 
   if (!token) {
-    alert("Faça login primeiro ❗");
+    alert("Faça login primeiro");
     return;
   }
 
@@ -200,7 +198,7 @@ async function addDespesa() {
   const valor = parseFloat(document.getElementById("valor").value);
   const categoria = document.getElementById("categoria").value;
 
-  await fetch("http://127.0.0.1:8000/despesas/manual", {
+  await fetch(API + "/despesas/manual", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -217,18 +215,15 @@ async function addDespesa() {
   });
 
   alert("Despesa adicionada ✅");
-
   carregarDashboard();
 }
 
 // ✅ DASHBOARD
 async function carregarDashboard() {
 
-  if (!token) {
-    return;
-  }
+  if (!token) return;
 
-  const res = await fetch("http://127.0.0.1:8000/dashboard?mes=6&ano=2026", {
+  const res = await fetch(API + "/dashboard?mes=6&ano=2026", {
     headers: {
       "Authorization": "Bearer " + token
     }
@@ -236,27 +231,24 @@ async function carregarDashboard() {
 
   const data = await res.json();
 
-  console.log(data);
-
-  // ✅ NOME DO USUÁRIO
   document.getElementById("usuarioNome").innerText = "👤 " + data.usuario;
 
-  // ✅ CARDS
   document.getElementById("despesas").innerText = data.cards.total_despesas;
   document.getElementById("renda").innerText = data.cards.total_renda;
   document.getElementById("saldo").innerText = data.cards.saldo;
 
-  // ✅ CATEGORIA
   const labelsCat = data.gastos_por_categoria.map(c => c.categoria);
   const valoresCat = data.gastos_por_categoria.map(c => c.valor);
 
   if (pizzaChart) pizzaChart.destroy();
   pizzaChart = new Chart(document.getElementById("pizza"), {
     type: 'pie',
-    data: { labels: labelsCat, datasets: [{ data: valoresCat }] }
+    data: {
+      labels: labelsCat,
+      datasets: [{ data: valoresCat }]
+    }
   });
 
-  // ✅ EVOLUÇÃO
   const labelsMes = data.evolucao_mensal.map(m => m.mes);
   const valoresDesp = data.evolucao_mensal.map(m => m.despesas);
 
@@ -269,7 +261,6 @@ async function carregarDashboard() {
     }
   });
 
-  // ✅ RENDA POR PESSOA
   if (data.renda_por_pessoa) {
     const nomes = data.renda_por_pessoa.map(r => r.nome);
     const valores = data.renda_por_pessoa.map(r => r.valor);
