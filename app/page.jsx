@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { login } from "./dashboard/api"; // usa sua API
+import { login } from "../dashboard/api"; // usa sua API
 
 export default function Home() {
   const [email, setEmail] = useState("");
