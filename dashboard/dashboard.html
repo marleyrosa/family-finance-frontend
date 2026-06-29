@@ -15,9 +15,7 @@
       padding: 20px;
     }
 
-    h1 {
-      text-align: center;
-    }
+    h1 { text-align: center; }
 
     .controls {
       text-align: center;
@@ -125,11 +123,8 @@
 
 <script>
 
-// ✅ 🔥 MUDAR AQUI QUANDO SUBIR BACKEND
-
-//const API = "http://127.0.0.1:8000";
-// EXEMPLO ONLINE:
-const API = "https://seu-backend.onrender.com";
+// ✅ API ONLINE
+const API = "https://family-finance-backend.onrender.com";
 
 let token = localStorage.getItem("token") || "";
 
@@ -154,18 +149,12 @@ async function login() {
   token = data.access_token;
   localStorage.setItem("token", token);
 
-  alert("Login realizado ✅");
-
   carregarDashboard();
 }
 
 // ✅ ADD RENDA
 async function addRenda() {
-
-  if (!token) {
-    alert("Faça login primeiro");
-    return;
-  }
+  if (!token) return alert("Faça login");
 
   const valor = parseFloat(document.getElementById("valorRenda").value);
 
@@ -175,24 +164,15 @@ async function addRenda() {
       "Content-Type": "application/json",
       "Authorization": "Bearer " + token
     },
-    body: JSON.stringify({
-      valor: valor,
-      mes: 6,
-      ano: 2026
-    })
+    body: JSON.stringify({ valor, mes: 6, ano: 2026 })
   });
 
-  alert("Renda adicionada ✅");
   carregarDashboard();
 }
 
 // ✅ ADD DESPESA
 async function addDespesa() {
-
-  if (!token) {
-    alert("Faça login primeiro");
-    return;
-  }
+  if (!token) return alert("Faça login");
 
   const descricao = document.getElementById("descricao").value;
   const valor = parseFloat(document.getElementById("valor").value);
@@ -204,17 +184,9 @@ async function addDespesa() {
       "Content-Type": "application/json",
       "Authorization": "Bearer " + token
     },
-    body: JSON.stringify([
-      {
-        descricao: descricao,
-        valor: valor,
-        data: "2026-06-29",
-        categoria: categoria
-      }
-    ])
+    body: JSON.stringify([{ descricao, valor, data: "2026-06-29", categoria }])
   });
 
-  alert("Despesa adicionada ✅");
   carregarDashboard();
 }
 
@@ -243,10 +215,7 @@ async function carregarDashboard() {
   if (pizzaChart) pizzaChart.destroy();
   pizzaChart = new Chart(document.getElementById("pizza"), {
     type: 'pie',
-    data: {
-      labels: labelsCat,
-      datasets: [{ data: valoresCat }]
-    }
+    data: { labels: labelsCat, datasets: [{ data: valoresCat }] }
   });
 
   const labelsMes = data.evolucao_mensal.map(m => m.mes);
@@ -276,10 +245,8 @@ async function carregarDashboard() {
   }
 }
 
-// ✅ AUTO LOAD
-if (token) {
-  carregarDashboard();
-}
+// ✅ AUTOLOAD
+if (token) carregarDashboard();
 
 </script>
 
