@@ -1,27 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import { login } from "../dashboard/api"; // usa sua API
 
 export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  async function handleLogin() {
+  const handleLogin = async () => {
     try {
-      const data = await login(email, password);
+      const response = await fetch(
+        "https://family-finance-backend.onrender.com/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            senha: password,
+          }),
+        }
+      );
 
-      // ✅ salva token
-      localStorage.setItem("family_finance_token", data.access_token);
+      const data = await response.json();
+      console.log(data);
 
-      // ✅ redireciona para dashboard
+      if (!response.ok) {
+        throw new Error(data.detail || "Erro no login");
+      }
+
+      localStorage.setItem("token", data.access_token);
       window.location.href = "/dashboard";
-
     } catch (err) {
       alert("Erro no login");
       console.error(err);
     }
-  }
+  };
 
   return (
     <div style={{ padding: 40 }}>
