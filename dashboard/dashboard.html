@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard Financeiro</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial;
+      background: linear-gradient(135deg, #4B0082, #8A2BE2);
+      color: white;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    .controls {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    input, select, button {
+      padding: 8px;
+      margin: 5px;
+      border-radius: 6px;
+      border: none;
+    }
+
+    button {
+      background: #ff00ff;
+      color: white;
+      cursor: pointer;
+    }
+
+    .cards {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      flex: 1;
+      padding: 20px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      text-align: center;
+    }
+
+    canvas {
+      background: white;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+
+<body>
+
+<h1>💰 Dashboard Financeiro</h1>
+
+<!-- ✅ USUÁRIO LOGADO -->
+<h2 id="usuarioNome">👤 Não logado</h2>
+
+<!-- ✅ LOGIN -->
+<div class="controls">
+  <input id="email" placeholder="Email">
+  <input id="senha" type="password" placeholder="Senha">
+  <button onclick="login()">Entrar</button>
+</div>
+
+<!-- ✅ ADD RENDA -->
+<h2>💵 Nova Renda</h2>
+<div class="controls">
+  <input id="valorRenda" type="number" placeholder="Valor">
+  <button onclick="addRenda()">Adicionar Renda</button>
+</div>
+
+<!-- ✅ ADD DESPESA -->
+<h2>➕ Nova Despesa</h2>
+<div class="controls">
+  <input id="descricao" placeholder="Descrição">
+  <input id="valor" type="number" placeholder="Valor">
+
+  <select id="categoria">
+    <option>SUPERMERCADO</option>
+    <option>TRANSPORTE</option>
+    <option>LAZER</option>
+    <option>OUTROS</option>
+  </select>
+
+  <button onclick="addDespesa()">Adicionar</button>
+</div>
+
+<!-- ✅ BOTÃO ATUALIZAR -->
+<div class="controls">
+  <button onclick="carregarDashboard()">Atualizar</button>
+</div>
+
+<!-- ✅ CARDS -->
+<div class="cards">
+  <div class="card">
+    <h3>Despesas</h3>
+    <p id="despesas">0</p>
+  </div>
+
+  <div class="card">
+    <h3>Renda</h3>
+    <p id="renda">0</p>
+  </div>
+
+  <div class="card">
+    <h3>Saldo</h3>
+    <p id="saldo">0</p>
+  </div>
+</div>
+
+<h2>📊 Gastos por Categoria</h2>
+<canvas id="pizza"></canvas>
+
+<h2>📈 Evolução Mensal</h2>
+<canvas id="barra"></canvas>
+
+<h2>💵 Renda por Pessoa</h2>
+<canvas id="rendaPessoa"></canvas>
+
+<script>
+
+// ✅ TOKEN AUTOMÁTICO
+let token = localStorage.getItem("token") || "";
+
+let pizzaChart, barraChart, rendaChart;
+
+// ✅ LOGIN
+async function login() {
+  const username = document.getElementById("email").value;
+  const password = document.getElementById("senha").value;
+
+  const form = new URLSearchParams();
+  form.append("username", username);
+  form.append("password", password);
+
+  const res = await fetch("http://127.0.0.1:8000/auth/login", {
+    method: "POST",
+    body: form
+  });
+
+  const data = await res.json();
+
+  token = data.access_token;
+  localStorage.setItem("token", token);
+
+  alert("Login realizado ✅");
+
+  carregarDashboard();
+}
+
+// ✅ ADD RENDA
+async function addRenda() {
+
+  if (!token) {
+    alert("Faça login primeiro ❗");
+    return;
+  }
+
+  const valor = parseFloat(document.getElementById("valorRenda").value);
+
+  await fetch("http://127.0.0.1:8000/rendas", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + token
+    },
+    body: JSON.stringify({
+      valor: valor,
+      mes: 6,
+      ano: 2026
+    })
+  });
+
+  alert("Renda adicionada ✅");
+
+  carregarDashboard();
+}
+
+// ✅ ADD DESPESA
+async function addDespesa() {
+
+  if (!token) {
+    alert("Faça login primeiro ❗");
+    return;
+  }
+
+  const descricao = document.getElementById("descricao").value;
+  const valor = parseFloat(document.getElementById("valor").value);
+  const categoria = document.getElementById("categoria").value;
+
+  await fetch("http://127.0.0.1:8000/despesas/manual", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + token
+    },
+    body: JSON.stringify([
+      {
+        descricao: descricao,
+        valor: valor,
+        data: "2026-06-29",
+        categoria: categoria
+      }
+    ])
+  });
+
+  alert("Despesa adicionada ✅");
+
+  carregarDashboard();
+}
+
+// ✅ DASHBOARD
+async function carregarDashboard() {
+
+  if (!token) {
+    return;
+  }
+
+  const res = await fetch("http://127.0.0.1:8000/dashboard?mes=6&ano=2026", {
+    headers: {
+      "Authorization": "Bearer " + token
+    }
+  });
+
+  const data = await res.json();
+
+  console.log(data);
+
+  // ✅ NOME DO USUÁRIO
+  document.getElementById("usuarioNome").innerText = "👤 " + data.usuario;
+
+  // ✅ CARDS
+  document.getElementById("despesas").innerText = data.cards.total_despesas;
+  document.getElementById("renda").innerText = data.cards.total_renda;
+  document.getElementById("saldo").innerText = data.cards.saldo;
+
+  // ✅ CATEGORIA
+  const labelsCat = data.gastos_por_categoria.map(c => c.categoria);
+  const valoresCat = data.gastos_por_categoria.map(c => c.valor);
+
+  if (pizzaChart) pizzaChart.destroy();
+  pizzaChart = new Chart(document.getElementById("pizza"), {
+    type: 'pie',
+    data: { labels: labelsCat, datasets: [{ data: valoresCat }] }
+  });
+
+  // ✅ EVOLUÇÃO
+  const labelsMes = data.evolucao_mensal.map(m => m.mes);
+  const valoresDesp = data.evolucao_mensal.map(m => m.despesas);
+
+  if (barraChart) barraChart.destroy();
+  barraChart = new Chart(document.getElementById("barra"), {
+    type: 'bar',
+    data: {
+      labels: labelsMes,
+      datasets: [{ label: "Despesas", data: valoresDesp }]
+    }
+  });
+
+  // ✅ RENDA POR PESSOA
+  if (data.renda_por_pessoa) {
+    const nomes = data.renda_por_pessoa.map(r => r.nome);
+    const valores = data.renda_por_pessoa.map(r => r.valor);
+
+    if (rendaChart) rendaChart.destroy();
+    rendaChart = new Chart(document.getElementById("rendaPessoa"), {
+      type: 'bar',
+      data: {
+        labels: nomes,
+        datasets: [{ label: "Renda", data: valores }]
+      }
+    });
+  }
+}
+
+// ✅ AUTO LOAD
+if (token) {
+  carregarDashboard();
+}
+
+</script>
+
+</body>
+</html>
