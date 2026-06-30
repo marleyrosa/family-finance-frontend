@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const API_URL = "https://family-finance-backend.onrender.com";
+import { getDashboard } from "../../dashboard/api";
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
@@ -16,24 +16,19 @@ export default function DashboardPage() {
       return;
     }
 
+    const now = new Date();
+
     const loadData = async () => {
       try {
-        const res = await fetch(`${API_URL}/dashboard?mes=6&ano=2026`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const dashboardData = await res.json();
-        console.log(dashboardData);
-
-        if (!res.ok) {
-          throw new Error(dashboardData.detail || "Erro ao carregar dashboard");
-        }
-
+        const dashboardData = await getDashboard(token, now.getMonth() + 1, now.getFullYear());
         setData(dashboardData);
       } catch (err) {
         console.error(err);
+        if (err.status === 401) {
+          localStorage.removeItem("token");
+          window.location.href = "/";
+          return;
+        }
         setError("Erro ao carregar dashboard");
       }
     };
