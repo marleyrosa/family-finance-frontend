@@ -1,6 +1,6 @@
 "use client";
 
-const API_URL =
+export const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://family-finance-backend.onrender.com";
 
 export async function apiRequest(path, options = {}, token) {
@@ -17,20 +17,39 @@ export async function apiRequest(path, options = {}, token) {
     headers,
   });
 
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (err) {
+    data = null;
   }
 
-  return response.json();
+  if (!response.ok) {
+    const detail = data && data.detail ? data.detail : `Request failed: ${response.status}`;
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
+  }
+
+  return data;
 }
 
 export async function login(email, password) {
-  const form = new URLSearchParams();
-  form.append("username", email);
-  form.append("password", password);
-
-  return apiRequest("/auth/login", {
+  return apiRequest("/login", {
     method: "POST",
-    body: form,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
   });
+}
+
+export async function register(nome, email, password) {
+  return apiRequest("/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nome, email, password }),
+  });
+}
+
+export async function getDashboard(token, mes, ano) {
+  return apiRequest(`/dashboard?mes=${mes}&ano=${ano}`, {}, token);
 }

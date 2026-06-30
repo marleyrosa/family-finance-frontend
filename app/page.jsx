@@ -2,63 +2,52 @@
 
 import { useState } from "react";
 
+import AuthPanel from "../components/AuthPanel";
+import { login as loginRequest, register as registerRequest } from "../dashboard/api";
+
 export default function Home() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleLogin = async () => {
+  async function handleLogin(email, password) {
+    setLoading(true);
+    setError("");
     try {
-      const response = await fetch(
-        "https://family-finance-backend.onrender.com/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            senha: password,
-          }),
-        }
-      );
-
-      const data = await response.json();
-      console.log(data);
-
-      if (!response.ok) {
-        throw new Error(data.detail || "Erro no login");
-      }
-
+      const data = await loginRequest(email, password);
       localStorage.setItem("token", data.access_token);
       window.location.href = "/dashboard";
     } catch (err) {
-      alert("Erro no login");
-      console.error(err);
+      setError(err.message || "Erro no login");
+    } finally {
+      setLoading(false);
     }
-  };
+  }
+
+  async function handleRegister(nome, email, password) {
+    setLoading(true);
+    setError("");
+    try {
+      await registerRequest(nome, email, password);
+      const data = await loginRequest(email, password);
+      localStorage.setItem("token", data.access_token);
+      window.location.href = "/dashboard";
+    } catch (err) {
+      setError(err.message || "Erro no cadastro");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div style={{ padding: 40 }}>
-      <h1>Login</h1>
-
-      <input
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-
-      <br /><br />
-
-      <input
-        placeholder="Senha"
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-
-      <br /><br />
-
-      <button onClick={handleLogin}>Entrar</button>
-    </div>
+    <main className="flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md">
+        <AuthPanel onLogin={handleLogin} onRegister={handleRegister} loading={loading} />
+        {error ? (
+          <p className="mt-4 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-center text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </main>
   );
 }
