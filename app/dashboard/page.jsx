@@ -13,7 +13,6 @@ import {
   YAxis,
 } from "recharts";
 
-<<<<<<< HEAD
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://family-finance-backend-0r19.onrender.com";
 
 const DEFAULT_CATEGORIES = [
@@ -51,9 +50,6 @@ async function authRequest(path, token, options = {}) {
 
   return data;
 }
-=======
-import { getDashboard } from "../../dashboard/api";
->>>>>>> 838eadd4b443a075eac8ec2665e96254c026a818
 
 export default function DashboardPage() {
   const [token, setToken] = useState("");
@@ -89,7 +85,6 @@ export default function DashboardPage() {
       return;
     }
 
-<<<<<<< HEAD
     setToken(savedToken);
 
     const run = async () => {
@@ -99,22 +94,6 @@ export default function DashboardPage() {
         setError(err.message || "Falha ao carregar dashboard");
       } finally {
         setLoading(false);
-=======
-    const now = new Date();
-
-    const loadData = async () => {
-      try {
-        const dashboardData = await getDashboard(token, now.getMonth() + 1, now.getFullYear());
-        setData(dashboardData);
-      } catch (err) {
-        console.error(err);
-        if (err.status === 401) {
-          localStorage.removeItem("token");
-          window.location.href = "/";
-          return;
-        }
-        setError("Erro ao carregar dashboard");
->>>>>>> 838eadd4b443a075eac8ec2665e96254c026a818
       }
     };
 
