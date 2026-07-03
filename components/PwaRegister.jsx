@@ -9,6 +9,17 @@ export default function PwaRegister() {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
       });
     }
+
+    const onBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      window.deferredInstallPrompt = event;
+    };
+
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    };
   }, []);
 
   return null;

@@ -1,5 +1,5 @@
-const CACHE_NAME = "family-finance-v1";
-const STATIC_ASSETS = ["/", "/manifest.json"];
+const CACHE_NAME = "family-finance-v23";
+const STATIC_ASSETS = ["/", "/offline", "/manifest.webmanifest", "/icons/icon-192.svg", "/icons/icon-512.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)));
@@ -25,6 +25,8 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  const isNavigation = event.request.mode === "navigate";
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) {
@@ -37,7 +39,19 @@ self.addEventListener("fetch", (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
           return response;
         })
-        .catch(() => caches.match("/"));
+        .catch(() => (isNavigation ? caches.match("/offline") : caches.match("/")));
     })
   );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SHOW_NOTIFICATION") {
+    const title = event.data.title || "FamilYMoney";
+    const options = {
+      body: event.data.body || "Lembrete financeiro",
+      icon: "/icons/icon-192.svg",
+      badge: "/icons/icon-192.svg",
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  }
 });

@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   Bar,
   BarChart,
@@ -115,6 +117,9 @@ export default function DashboardPage() {
 
   const [monthFilter, setMonthFilter] = useState(currentMonth());
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [searchField, setSearchField] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [notificationEnabled, setNotificationEnabled] = useState(false);
 
   const [expenseForm, setExpenseForm] = useState({ category: CATEGORY_OPTIONS[0].api, amount: "" });
   const [incomeForm, setIncomeForm] = useState({ amount: "" });
@@ -152,6 +157,7 @@ export default function DashboardPage() {
     const stored = localStorage.getItem("finance_goals");
     const storedAvatar = localStorage.getItem("familymoney_avatar_url") || "";
     setAvatarUrl(storedAvatar);
+    setNotificationEnabled(typeof Notification !== "undefined" && Notification.permission === "granted");
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
@@ -294,6 +300,68 @@ export default function DashboardPage() {
     return items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 10);
   }, [filteredExpenses, filteredIncomes]);
 
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const buildTransactionDescription = (tx) => {
+    if (tx.description || tx.descricao) {
+      return String(tx.description || tx.descricao);
+    }
+    return `${tx.type === "expense" ? "Despesa" : "Receita"} ${tx.category}`;
+  };
+
+  const matchesSearch = (tx) => {
+    if (!normalizedSearch) {
+      return true;
+    }
+
+    const description = buildTransactionDescription(tx).toLowerCase();
+    const category = String(tx.category || "").toLowerCase();
+    const owner = String(tx.owner || "").toLowerCase();
+
+    if (searchField === "description") {
+      return description.includes(normalizedSearch);
+    }
+    if (searchField === "category") {
+      return category.includes(normalizedSearch);
+    }
+    if (searchField === "user") {
+      return owner.includes(normalizedSearch);
+    }
+
+    return description.includes(normalizedSearch) || category.includes(normalizedSearch) || owner.includes(normalizedSearch);
+  };
+
+  const searchableTransactions = useMemo(
+    () => recentTransactions.filter((tx) => matchesSearch(tx)),
+    [recentTransactions, normalizedSearch, searchField]
+  );
+
+  const searchedExpenses = useMemo(
+    () =>
+      filteredExpenses.filter((item) =>
+        matchesSearch({
+          type: "expense",
+          owner: item.user_email,
+          category: API_CATEGORY_TO_LABEL[item.category] || item.category,
+          description: item.description || item.descricao,
+        })
+      ),
+    [filteredExpenses, normalizedSearch, searchField]
+  );
+
+  const searchedIncomes = useMemo(
+    () =>
+      filteredIncomes.filter((item) =>
+        matchesSearch({
+          type: "income",
+          owner: item.user_email,
+          category: "Receitas",
+          description: item.description || item.descricao,
+        })
+      ),
+    [filteredIncomes, normalizedSearch, searchField]
+  );
+
   const insights = useMemo(() => {
     const notes = [];
 
@@ -340,6 +408,46 @@ export default function DashboardPage() {
     return email;
   };
 
+  const sendLocalNotification = async (title, body) => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") {
+      return;
+    }
+    if (Notification.permission !== "granted") {
+      return;
+    }
+
+    try {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: "SHOW_NOTIFICATION",
+          title,
+          body,
+        });
+      } else {
+        new Notification(title, { body, icon: "/icons/icon-192.svg" });
+      }
+    } catch {
+      // no-op: keep dashboard usable even without notifications.
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    if (typeof window === "undefined" || typeof Notification === "undefined") {
+      pushToast("warning", "Notificacoes indisponiveis", "Seu navegador nao suporta notificacoes locais.");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    const enabled = permission === "granted";
+    setNotificationEnabled(enabled);
+    if (enabled) {
+      pushToast("success", "Notificacoes ativadas", "Lembretes financeiros locais foram ativados.");
+      await sendLocalNotification("FamilYMoney", "Notificacoes financeiras ativadas com sucesso.");
+    } else {
+      pushToast("warning", "Permissao negada", "Ative notificacoes no navegador para receber lembretes.");
+    }
+  };
+
   useEffect(() => {
     if (loading) {
       return;
@@ -356,14 +464,20 @@ export default function DashboardPage() {
       "Resumo mensal",
       `Receitas: ${brl(monthlyIncome)} | Despesas: ${brl(monthlyExpense)} | Saldo Familiar: ${brl(familyBalance)}`
     );
+    sendLocalNotification(
+      "Resumo financeiro mensal",
+      `Receitas ${brl(monthlyIncome)} e despesas ${brl(monthlyExpense)}.`
+    );
 
     if (committedPct >= 80) {
       pushToast("warning", "Alerta de orcamento", `Despesas em ${committedPct.toFixed(1)}% das receitas do mes.`);
+      sendLocalNotification("Alerta de orcamento", `Despesas em ${committedPct.toFixed(1)}% das receitas.`);
     }
 
     if (goals.savingsGoal > 0) {
       if (savingsProgress >= 100) {
         pushToast("success", "Meta de economia", "Parabens, sua meta de economia foi atingida.");
+        sendLocalNotification("Meta de economia atingida", "Parabens! Voce atingiu sua meta de economia.");
       } else {
         pushToast("warning", "Meta de economia", `Progresso atual: ${savingsProgress.toFixed(1)}%.`);
       }
@@ -384,6 +498,20 @@ export default function DashboardPage() {
     monthlyIncome,
     savingsProgress,
   ]);
+
+  useEffect(() => {
+    if (loading || !notificationEnabled) {
+      return;
+    }
+
+    const reminderKey = `familymoney_reminder_${new Date().toISOString().slice(0, 10)}`;
+    if (localStorage.getItem(reminderKey)) {
+      return;
+    }
+
+    localStorage.setItem(reminderKey, "sent");
+    sendLocalNotification("Lembrete financeiro", "Registre suas receitas e despesas do dia no FamilYMoney.");
+  }, [loading, notificationEnabled]);
 
   const handleAddExpense = async () => {
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) {
@@ -443,6 +571,96 @@ export default function DashboardPage() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
+  };
+
+  const previousMonthFilter = useMemo(() => {
+    const [year, month] = monthFilter.split("-").map(Number);
+    const current = new Date(year, month - 1, 1);
+    current.setMonth(current.getMonth() - 1);
+    return `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`;
+  }, [monthFilter]);
+
+  const previousMonthMetrics = useMemo(() => {
+    const [year, month] = previousMonthFilter.split("-").map(Number);
+    const prevExpenses = expenses.filter((item) => {
+      const d = new Date(item.created_at);
+      return d.getFullYear() === year && d.getMonth() + 1 === month;
+    });
+    const prevIncomes = incomes.filter((item) => {
+      const d = new Date(item.created_at);
+      return d.getFullYear() === year && d.getMonth() + 1 === month;
+    });
+
+    const prevExpenseTotal = prevExpenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const prevIncomeTotal = prevIncomes.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    return {
+      income: prevIncomeTotal,
+      expense: prevExpenseTotal,
+      balance: prevIncomeTotal - prevExpenseTotal,
+    };
+  }, [expenses, incomes, previousMonthFilter]);
+
+  const handleExportPdf = () => {
+    const doc = new jsPDF();
+    const monthLabel = monthFilter;
+
+    doc.setFontSize(16);
+    doc.text("FamilYMoney - Relatorio Financeiro Mensal", 14, 16);
+    doc.setFontSize(10);
+    doc.text(`Mes de referencia: ${monthLabel}`, 14, 24);
+
+    doc.setFontSize(12);
+    doc.text("Resumo mensal", 14, 34);
+    autoTable(doc, {
+      startY: 38,
+      head: [["Indicador", "Valor"]],
+      body: [
+        ["Receitas", brl(monthlyIncome)],
+        ["Despesas", brl(monthlyExpense)],
+        ["Saldo", brl(balance)],
+        ["Saldo Familiar", brl(familyBalance)],
+        ["Comprometimento", `${committedPct.toFixed(1)}%`],
+      ],
+      theme: "grid",
+      styles: { fontSize: 9 },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      head: [["Resumo", "Mes atual", "Mes anterior"]],
+      body: [
+        ["Receitas", brl(monthlyIncome), brl(previousMonthMetrics.income)],
+        ["Despesas", brl(monthlyExpense), brl(previousMonthMetrics.expense)],
+        ["Saldo", brl(balance), brl(previousMonthMetrics.balance)],
+      ],
+      theme: "striped",
+      styles: { fontSize: 9 },
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      head: [["Categoria", "Despesa", "% das Receitas"]],
+      body: expensesByCategory.map((item) => [item.category, brl(item.amount), `${item.pct_income.toFixed(1)}%`]),
+      theme: "grid",
+      styles: { fontSize: 9 },
+    });
+
+    const chartY = doc.lastAutoTable.finalY + 12;
+    doc.setFontSize(11);
+    doc.text("Analise visual por categoria (barra simplificada)", 14, chartY);
+    let rowY = chartY + 6;
+    const maxPct = Math.max(1, ...commitmentByCategory.map((item) => item.percentage));
+    commitmentByCategory.slice(0, 6).forEach((item) => {
+      const width = (item.percentage / maxPct) * 90;
+      doc.text(item.category, 14, rowY);
+      doc.setFillColor(90, 103, 216);
+      doc.rect(70, rowY - 3, width, 4, "F");
+      doc.text(`${item.percentage.toFixed(1)}%`, 165, rowY);
+      rowY += 8;
+    });
+
+    doc.save(`relatorio_financeiro_${monthFilter}.pdf`);
+    pushToast("success", "PDF gerado", "Relatorio financeiro mensal exportado com sucesso.");
   };
 
   const openEditExpenseModal = (expense) => {
@@ -655,6 +873,18 @@ export default function DashboardPage() {
                   Exportar Relatorio CSV
                 </button>
                 <button
+                  className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+                  onClick={handleExportPdf}
+                >
+                  Exportar PDF
+                </button>
+                <button
+                  className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-amber-500"
+                  onClick={requestNotificationPermission}
+                >
+                  {notificationEnabled ? "Notificacoes ativas" : "Ativar notificacoes"}
+                </button>
+                <button
                   className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-rose-500"
                   onClick={handleLogout}
                 >
@@ -700,6 +930,25 @@ export default function DashboardPage() {
               <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
                 Saldo Familiar: <strong className="text-white">{brl(familyBalance)}</strong>
               </div>
+            </div>
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <select
+                className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white"
+                value={searchField}
+                onChange={(e) => setSearchField(e.target.value)}
+              >
+                <option value="all">Buscar em tudo</option>
+                <option value="description">Buscar por descricao</option>
+                <option value="category">Buscar por categoria</option>
+                <option value="user">Buscar por usuario</option>
+              </select>
+              <input
+                className="sm:col-span-2 rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white"
+                placeholder="Buscar transacoes por descricao, categoria ou usuario"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
           </motion.header>
 
@@ -832,7 +1081,7 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredExpenses.map((expense) => {
+                  {searchedExpenses.map((expense) => {
                     const isMine = user?.email && expense.user_email === user.email;
                     return (
                       <tr key={expense.id} className="border-t border-white/10">
@@ -881,7 +1130,7 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredIncomes.map((income) => {
+                  {searchedIncomes.map((income) => {
                     const isMine = user?.email && income.user_email === user.email;
                     return (
                       <tr key={income.id} className="border-t border-white/10">
@@ -993,12 +1242,42 @@ export default function DashboardPage() {
             </article>
           </motion.section>
 
+          <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+            <h3 className="mb-3 text-lg font-semibold">Relatorios mensais</h3>
+            <div className="grid gap-3 md:grid-cols-4">
+              <article className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="text-xs text-slate-400">Mes atual ({monthFilter})</p>
+                <p className="mt-1 text-sm text-slate-200">Receitas: {brl(monthlyIncome)}</p>
+                <p className="text-sm text-slate-200">Despesas: {brl(monthlyExpense)}</p>
+              </article>
+              <article className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="text-xs text-slate-400">Mes anterior ({previousMonthFilter})</p>
+                <p className="mt-1 text-sm text-slate-200">Receitas: {brl(previousMonthMetrics.income)}</p>
+                <p className="text-sm text-slate-200">Despesas: {brl(previousMonthMetrics.expense)}</p>
+              </article>
+              <article className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="text-xs text-slate-400">Progresso de economia</p>
+                <p className="mt-1 text-sm text-slate-200">Meta: {brl(goals.savingsGoal || 0)}</p>
+                <p className="text-sm text-slate-200">Atual: {savingsProgress.toFixed(1)}%</p>
+              </article>
+              <article className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="text-xs text-slate-400">Analise por categoria</p>
+                <p className="mt-1 text-sm text-slate-200">
+                  Top categoria: {expensesByCategory[0]?.category || "Sem dados"}
+                </p>
+                <p className="text-sm text-slate-200">
+                  Participacao: {expensesByCategory[0] ? `${expensesByCategory[0].pct_income.toFixed(1)}%` : "0%"}
+                </p>
+              </article>
+            </div>
+          </motion.section>
+
           <motion.section variants={itemVariants} id="transactions" className="frosted rounded-2xl border border-white/10 p-4">
             <h3 className="mb-3 text-lg font-semibold">Transacoes Recentes</h3>
             <div className="relative pl-5">
               <span className="absolute left-2 top-1 h-[calc(100%-0.5rem)] w-px bg-white/15" />
               <div className="space-y-2">
-                {recentTransactions.map((tx) => (
+                {searchableTransactions.map((tx) => (
                   <motion.div
                     key={tx.id}
                     whileHover={{ x: 3 }}
@@ -1011,7 +1290,7 @@ export default function DashboardPage() {
                     />
                     <div>
                       <p className="text-sm font-medium text-white">
-                        {tx.type === "expense" ? "Despesa" : "Receitas"} · {tx.category}
+                        {tx.type === "expense" ? "Despesa" : "Receita"} · {tx.category}
                       </p>
                       <div className="mt-1 flex items-center gap-2">
                         <span className="rounded-full bg-slate-800/80 px-2 py-0.5 text-[11px] text-slate-200">

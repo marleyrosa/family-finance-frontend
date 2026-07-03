@@ -9,7 +9,7 @@ const sora = Sora({ subsets: ["latin"], variable: "--font-sora" });
 export const metadata = {
   title: "FamilYMoney",
   description: "Plataforma de gestao financeira familiar",
-  manifest: "/manifest.json",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: "/icons/icon-192.svg",
     apple: "/icons/icon-192.svg",
