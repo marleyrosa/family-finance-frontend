@@ -106,7 +106,7 @@ export async function createExpense(token, payload) {
 
 export async function updateExpense(token, expenseId, payload) {
   return apiRequest(
-    `/expense/${expenseId}`,
+    `/expenses/${expenseId}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -118,7 +118,7 @@ export async function updateExpense(token, expenseId, payload) {
 
 export async function deleteExpense(token, expenseId) {
   return apiRequest(
-    `/expense/${expenseId}`,
+    `/expenses/${expenseId}`,
     {
       method: "DELETE",
     },
@@ -140,7 +140,7 @@ export async function createIncome(token, payload) {
 
 export async function updateIncome(token, incomeId, payload) {
   return apiRequest(
-    `/income/${incomeId}`,
+    `/incomes/${incomeId}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -152,7 +152,7 @@ export async function updateIncome(token, incomeId, payload) {
 
 export async function deleteIncome(token, incomeId) {
   return apiRequest(
-    `/income/${incomeId}`,
+    `/incomes/${incomeId}`,
     {
       method: "DELETE",
     },

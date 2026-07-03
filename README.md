@@ -75,3 +75,12 @@ Acesso: <http://localhost:3000>
 - [x] Exportacao de relatorio PDF mensal
 - [x] Bloco de relatorios mensais (mes atual vs anterior, economia e categorias)
 - [x] Acao para ativar notificacoes e lembretes financeiros locais
+
+## Edit/Delete Route Validation (Validated after successful build and deployed API checks on 2026-07-03)
+
+- [x] Frontend URLs alinhadas com rotas deployadas (/expenses/{id} e /incomes/{id})
+- [x] Refresh do dashboard apos edit/delete
+- [x] Verificacao: Edit Income
+- [x] Verificacao: Edit Expense
+- [x] Verificacao: Delete Income
+- [x] Verificacao: Delete Expense
