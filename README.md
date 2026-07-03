@@ -42,21 +42,17 @@ npm run dev
 
 Acesso: <http://localhost:3000>
 
-## V2 Upgrade Checklist
+## V2 Todo Completion (Validated)
 
-- [x] Rename app to FamilYMoney
-- [x] User avatar and profile header
-- [x] Show logged user name
-- [x] Show income owner and expense owner
-- [x] Total family income and balance
-- [x] Edit/Delete income
-- [x] Edit/Delete expense
-- [x] Recent transactions list
-- [x] Sidebar navigation
-- [x] Nubank-style UI
-- [x] Stronger Framer Motion animations
-- [x] Pie chart by expense category
-- [x] Bar chart income vs expenses
-- [x] Category percentage of income
-- [x] Monthly insights and alerts
-- [x] Responsive mobile design
+- [x] User avatar/profile
+- [x] Transaction owner
+- [x] Edit income
+- [x] Delete income
+- [x] Edit expense
+- [x] Delete expense
+- [x] Recent transactions timeline
+- [x] Responsive sidebar navigation
+- [x] Family balance card
+- [x] Colorful charts
+- [x] Automatic insights
+- [x] Stronger Framer Motion animations (validated after successful build on 2026-07-03)

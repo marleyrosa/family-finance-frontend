@@ -52,6 +52,7 @@ const API_CATEGORY_TO_LABEL = {
 };
 
 const PIE_COLORS = ["#9f7aea", "#0ea5e9", "#14b8a6", "#f59e0b", "#ef4444", "#ec4899", "#22c55e", "#6366f1"];
+const BAR_COLORS = ["#38bdf8", "#f43f5e", "#a78bfa", "#f59e0b", "#34d399", "#fb7185", "#22d3ee", "#818cf8"];
 
 const SIDEBAR_ITEMS = [
   { id: "overview", label: "Overview" },
@@ -473,6 +474,10 @@ export default function DashboardPage() {
     window.location.href = "/";
   };
 
+  const familyMembersCount = (split.users || []).length;
+  const userDisplayName = user?.nome || user?.email || "FamilYMoney User";
+  const profileAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=5b21b6&color=ffffff&bold=true`;
+
   if (loading) {
     return <main className="p-6 text-slate-200">Carregando dashboard...</main>;
   }
@@ -482,7 +487,12 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_0%_0%,rgba(180,83,9,0.22),transparent_36%),radial-gradient(circle_at_100%_0%,rgba(99,102,241,0.22),transparent_34%),linear-gradient(180deg,#06070b,#0f121c)] text-slate-100">
       <div className="mx-auto grid w-full max-w-7xl gap-4 px-3 py-4 md:px-6 md:py-6 lg:grid-cols-[220px,1fr] lg:gap-6">
-        <aside className="frosted sticky top-5 hidden h-fit rounded-3xl border border-white/10 p-4 lg:block">
+        <motion.aside
+          initial={{ opacity: 0, x: -22 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          className="frosted sticky top-5 hidden h-fit rounded-3xl border border-white/10 p-4 lg:block"
+        >
           <p className="text-xs uppercase tracking-[0.18em] text-slate-400">FamilYMoney</p>
           <nav className="mt-4 space-y-1">
             {SIDEBAR_ITEMS.map((item) => (
@@ -495,19 +505,27 @@ export default function DashboardPage() {
               </a>
             ))}
           </nav>
-        </aside>
+        </motion.aside>
 
         <motion.section variants={containerVariants} initial="hidden" animate="show" className="space-y-4 md:space-y-5">
           <motion.header variants={itemVariants} id="overview" className="frosted rounded-3xl border border-white/10 p-4 md:p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-violet-500 text-lg font-bold text-white">
-                  {userInitial}
+                <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-violet-500 text-lg font-bold text-white">
+                  <img
+                    src={profileAvatarUrl}
+                    alt={userDisplayName}
+                    className="h-full w-full rounded-2xl object-cover"
+                  />
+                  <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border border-slate-900 bg-emerald-400" />
+                  <span className="absolute inset-0 hidden items-center justify-center rounded-2xl bg-black/30 text-lg font-bold sm:flex">
+                    {userInitial}
+                  </span>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Welcome back</p>
-                  <h1 className="font-display text-2xl font-semibold md:text-3xl">{user?.nome || "FamilYMoney User"}</h1>
-                  <p className="text-sm text-slate-300">{user?.email || ""}</p>
+                  <h1 className="font-display text-2xl font-semibold md:text-3xl">{userDisplayName}</h1>
+                  <p className="text-sm text-slate-300">{user?.email || ""} · {familyMembersCount} family members</p>
                 </div>
               </div>
 
@@ -537,6 +555,18 @@ export default function DashboardPage() {
                   Logout
                 </button>
               </div>
+            </div>
+
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+              {SIDEBAR_ITEMS.map((item) => (
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  className="whitespace-nowrap rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200"
+                >
+                  {item.label}
+                </a>
+              ))}
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-2 md:grid-cols-4">
@@ -575,11 +605,17 @@ export default function DashboardPage() {
               { title: "Monthly expenses", value: brl(monthlyExpense), tone: "from-fuchsia-500/25 to-fuchsia-300/5" },
               { title: "Monthly balance", value: brl(balance), tone: "from-emerald-500/25 to-emerald-300/5" },
               { title: "Income committed", value: `${committedPct.toFixed(1)}%`, tone: "from-orange-500/25 to-orange-300/5" },
+              { title: "Family balance", value: brl(familyBalance), tone: "from-violet-500/25 to-violet-300/5" },
             ].map((card) => (
-              <div key={card.title} className={`rounded-2xl border border-white/10 bg-gradient-to-br ${card.tone} p-4 backdrop-blur-xl`}>
+              <motion.div
+                key={card.title}
+                whileHover={{ scale: 1.02, y: -2 }}
+                transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                className={`rounded-2xl border border-white/10 bg-gradient-to-br ${card.tone} p-4 backdrop-blur-xl`}
+              >
                 <p className="text-sm text-slate-300">{card.title}</p>
                 <h2 className="mt-2 text-2xl font-semibold text-white">{card.value}</h2>
-              </div>
+              </motion.div>
             ))}
           </motion.section>
 
@@ -683,7 +719,11 @@ export default function DashboardPage() {
                     const isEditing = editingExpenseId === expense.id;
                     return (
                       <tr key={expense.id} className="border-t border-white/10">
-                        <td className="p-2">{ownerLabel(expense.user_email)}</td>
+                        <td className="p-2">
+                          <span className="inline-flex rounded-full bg-slate-800/80 px-2 py-0.5 text-[11px] text-slate-200">
+                            {ownerLabel(expense.user_email)}
+                          </span>
+                        </td>
                         <td className="p-2">
                           {isEditing ? (
                             <select
@@ -778,7 +818,11 @@ export default function DashboardPage() {
                     const isEditing = editingIncomeId === income.id;
                     return (
                       <tr key={income.id} className="border-t border-white/10">
-                        <td className="p-2">{ownerLabel(income.user_email)}</td>
+                        <td className="p-2">
+                          <span className="inline-flex rounded-full bg-slate-800/80 px-2 py-0.5 text-[11px] text-slate-200">
+                            {ownerLabel(income.user_email)}
+                          </span>
+                        </td>
                         <td className="p-2">
                           {isEditing ? (
                             <input
@@ -896,7 +940,11 @@ export default function DashboardPage() {
                     <XAxis dataKey="category" stroke="#cbd5e1" />
                     <YAxis stroke="#cbd5e1" />
                     <Tooltip />
-                    <Bar dataKey="percentage" fill="#a855f7" radius={[8, 8, 0, 0]} />
+                    <Bar dataKey="percentage" radius={[8, 8, 0, 0]}>
+                      {commitmentByCategory.map((entry, index) => (
+                        <Cell key={`${entry.category}-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -905,23 +953,38 @@ export default function DashboardPage() {
 
           <motion.section variants={itemVariants} id="transactions" className="frosted rounded-2xl border border-white/10 p-4">
             <h3 className="mb-3 text-lg font-semibold">Recent transactions</h3>
-            <div className="space-y-2">
-              {recentTransactions.map((tx) => (
-                <div key={tx.id} className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-white">
-                      {tx.type === "expense" ? "Expense" : "Income"} · {tx.category}
+            <div className="relative pl-5">
+              <span className="absolute left-2 top-1 h-[calc(100%-0.5rem)] w-px bg-white/15" />
+              <div className="space-y-2">
+                {recentTransactions.map((tx) => (
+                  <motion.div
+                    key={tx.id}
+                    whileHover={{ x: 3 }}
+                    className="relative flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <span
+                      className={`absolute -left-[1.15rem] top-3 h-2.5 w-2.5 rounded-full ${
+                        tx.type === "expense" ? "bg-rose-400" : "bg-emerald-400"
+                      }`}
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-white">
+                        {tx.type === "expense" ? "Expense" : "Income"} · {tx.category}
+                      </p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="rounded-full bg-slate-800/80 px-2 py-0.5 text-[11px] text-slate-200">
+                          {ownerLabel(tx.owner)}
+                        </span>
+                        <p className="text-xs text-slate-400">{new Date(tx.created_at).toLocaleString("pt-BR")}</p>
+                      </div>
+                    </div>
+                    <p className={`text-sm font-semibold ${tx.type === "expense" ? "text-rose-300" : "text-emerald-300"}`}>
+                      {tx.type === "expense" ? "-" : "+"}
+                      {brl(tx.amount)}
                     </p>
-                    <p className="text-xs text-slate-400">
-                      {ownerLabel(tx.owner)} · {new Date(tx.created_at).toLocaleString("pt-BR")}
-                    </p>
-                  </div>
-                  <p className={`text-sm font-semibold ${tx.type === "expense" ? "text-rose-300" : "text-emerald-300"}`}>
-                    {tx.type === "expense" ? "-" : "+"}
-                    {brl(tx.amount)}
-                  </p>
-                </div>
-              ))}
+                  </motion.div>
+                ))}
+              </div>
             </div>
           </motion.section>
 
@@ -929,8 +992,11 @@ export default function DashboardPage() {
             <h3 className="mb-3 text-lg font-semibold">Monthly insights and alerts</h3>
             <div className="space-y-2">
               {insights.map((note, index) => (
-                <div
+                <motion.div
                   key={`${note.text}-${index}`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.06 * index, duration: 0.28 }}
                   className={`rounded-xl px-3 py-2 text-sm ${
                     note.level === "danger"
                       ? "bg-rose-500/15 text-rose-100"
@@ -940,7 +1006,7 @@ export default function DashboardPage() {
                   }`}
                 >
                   {note.text}
-                </div>
+                </motion.div>
               ))}
             </div>
           </motion.section>
