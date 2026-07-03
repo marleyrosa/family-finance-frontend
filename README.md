@@ -56,3 +56,11 @@ Acesso: <http://localhost:3000>
 - [x] Colorful charts
 - [x] Automatic insights
 - [x] Stronger Framer Motion animations (validated after successful build on 2026-07-03)
+
+## V2.2 Todo Completion (Validated)
+
+- [x] Edit Income
+- [x] Edit Expense
+- [x] Delete Income
+- [x] Delete Expense
+- [x] User Avatar (upload + localStorage + fallback por iniciais)

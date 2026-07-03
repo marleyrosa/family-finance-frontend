@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Bar,
   BarChart,
@@ -120,10 +120,9 @@ export default function DashboardPage() {
   const [incomeForm, setIncomeForm] = useState({ amount: "" });
   const [goals, setGoals] = useState({ monthlyGoal: 0, savingsGoal: 0 });
 
-  const [editingExpenseId, setEditingExpenseId] = useState(null);
-  const [editingExpenseForm, setEditingExpenseForm] = useState({ category: CATEGORY_OPTIONS[0].api, amount: "" });
-  const [editingIncomeId, setEditingIncomeId] = useState(null);
-  const [editingIncomeAmount, setEditingIncomeAmount] = useState("");
+  const [editModal, setEditModal] = useState(null);
+  const [deleteModal, setDeleteModal] = useState(null);
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [toasts, setToasts] = useState([]);
   const lastNotificationKey = useRef("");
 
@@ -151,6 +150,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const stored = localStorage.getItem("finance_goals");
+    const storedAvatar = localStorage.getItem("familymoney_avatar_url") || "";
+    setAvatarUrl(storedAvatar);
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
@@ -444,92 +445,115 @@ export default function DashboardPage() {
     URL.revokeObjectURL(url);
   };
 
-  const startEditExpense = (expense) => {
-    setEditingExpenseId(expense.id);
-    setEditingExpenseForm({
+  const openEditExpenseModal = (expense) => {
+    setEditModal({
+      type: "expense",
+      id: expense.id,
       category: expense.category,
       amount: String(expense.amount),
     });
   };
 
-  const saveEditExpense = async () => {
-    if (!editingExpenseId) {
+  const openEditIncomeModal = (income) => {
+    setEditModal({
+      type: "income",
+      id: income.id,
+      amount: String(income.amount),
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editModal?.id) {
       return;
     }
-    const amount = Number(editingExpenseForm.amount);
+
+    const amount = Number(editModal.amount);
     if (!amount || amount <= 0) {
-      setError("Informe um valor de despesa valido");
+      setError(editModal.type === "expense" ? "Informe um valor de despesa valido" : "Informe um valor de renda valido");
+      pushToast("error", "Valor invalido", "Informe um valor maior que zero.");
       return;
     }
-    if (!ALLOWED_EXPENSE_CATEGORIES.has(editingExpenseForm.category)) {
+
+    if (editModal.type === "expense" && !ALLOWED_EXPENSE_CATEGORIES.has(editModal.category)) {
       setError("Categoria invalida");
+      pushToast("error", "Categoria invalida", "Selecione uma categoria valida.");
       return;
     }
 
     try {
       setError("");
-      await updateExpense(token, editingExpenseId, {
-        category: editingExpenseForm.category,
-        amount,
-      });
-      setEditingExpenseId(null);
+
+      if (editModal.type === "expense") {
+        await updateExpense(token, editModal.id, {
+          category: editModal.category,
+          amount,
+        });
+        pushToast("success", "Despesa atualizada", "Lancamento atualizado com sucesso.");
+      } else {
+        await updateIncome(token, editModal.id, { amount });
+        pushToast("success", "Receita atualizada", "Lancamento atualizado com sucesso.");
+      }
+
+      setEditModal(null);
       await loadDashboard(token);
     } catch (err) {
-      setError(err.message || "Erro ao editar despesa");
+      const message = err.message || "Erro ao editar lancamento";
+      setError(message);
+      pushToast("error", "Erro ao editar", message);
     }
   };
 
-  const removeExpense = async (expenseId) => {
-    if (!window.confirm("Excluir esta despesa?")) {
-      return;
-    }
-    try {
-      setError("");
-      await deleteExpense(token, expenseId);
-      await loadDashboard(token);
-    } catch (err) {
-      setError(err.message || "Erro ao excluir despesa");
-    }
+  const openDeleteModal = (type, id) => {
+    setDeleteModal({ type, id });
   };
 
-  const startEditIncome = (income) => {
-    setEditingIncomeId(income.id);
-    setEditingIncomeAmount(String(income.amount));
-  };
-
-  const saveEditIncome = async () => {
-    if (!editingIncomeId) {
-      return;
-    }
-
-    const amount = Number(editingIncomeAmount);
-    if (!amount || amount <= 0) {
-      setError("Informe um valor de renda valido");
+  const confirmDelete = async () => {
+    if (!deleteModal?.id) {
       return;
     }
 
     try {
       setError("");
-      await updateIncome(token, editingIncomeId, { amount });
-      setEditingIncomeId(null);
-      setEditingIncomeAmount("");
+
+      if (deleteModal.type === "expense") {
+        await deleteExpense(token, deleteModal.id);
+        pushToast("warning", "Despesa excluida", "Lancamento removido com sucesso.");
+      } else {
+        await deleteIncome(token, deleteModal.id);
+        pushToast("warning", "Receita excluida", "Lancamento removido com sucesso.");
+      }
+
+      setDeleteModal(null);
       await loadDashboard(token);
     } catch (err) {
-      setError(err.message || "Erro ao editar renda");
+      const message = err.message || "Erro ao excluir lancamento";
+      setError(message);
+      pushToast("error", "Erro ao excluir", message);
     }
   };
 
-  const removeIncome = async (incomeId) => {
-    if (!window.confirm("Excluir esta renda?")) {
+  const handleAvatarUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
       return;
     }
-    try {
-      setError("");
-      await deleteIncome(token, incomeId);
-      await loadDashboard(token);
-    } catch (err) {
-      setError(err.message || "Erro ao excluir renda");
+
+    if (!file.type.startsWith("image/")) {
+      pushToast("error", "Arquivo invalido", "Selecione uma imagem para avatar.");
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      setAvatarUrl(result);
+      localStorage.setItem("familymoney_avatar_url", result);
+      pushToast("success", "Avatar atualizado", "Sua foto de perfil foi atualizada.");
+    };
+    reader.onerror = () => {
+      pushToast("error", "Erro no upload", "Nao foi possivel carregar a imagem.");
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleLogout = () => {
@@ -539,7 +563,8 @@ export default function DashboardPage() {
 
   const familyMembersCount = (split.users || []).length;
   const userDisplayName = user?.nome || user?.email || "Usuario FamilYMoney";
-  const profileAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=5b21b6&color=ffffff&bold=true`;
+  const hasCustomAvatar = Boolean(avatarUrl);
+  const profileAvatarUrl = avatarUrl;
 
   if (loading) {
     return <main className="p-6 text-slate-200">Carregando dashboard...</main>;
@@ -557,6 +582,27 @@ export default function DashboardPage() {
           className="frosted sticky top-5 hidden h-fit rounded-3xl border border-white/10 p-4 lg:block"
         >
           <p className="text-xs uppercase tracking-[0.18em] text-slate-400">FamilYMoney</p>
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 overflow-hidden rounded-2xl bg-slate-900">
+                {hasCustomAvatar ? (
+                  <img src={profileAvatarUrl} alt={userDisplayName} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-orange-400 to-violet-500 text-base font-bold text-white">
+                    {userInitial}
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">{userDisplayName}</p>
+                <p className="truncate text-xs text-slate-400">{user?.email || ""}</p>
+              </div>
+            </div>
+            <label className="mt-2 block cursor-pointer rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-center text-xs text-slate-200 hover:bg-slate-900">
+              Enviar foto do perfil
+              <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+            </label>
+          </div>
           <nav className="mt-4 space-y-1">
             {SIDEBAR_ITEMS.map((item) => (
               <a
@@ -575,15 +621,12 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-3">
                 <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-violet-500 text-lg font-bold text-white">
-                  <img
-                    src={profileAvatarUrl}
-                    alt={userDisplayName}
-                    className="h-full w-full rounded-2xl object-cover"
-                  />
+                  {hasCustomAvatar ? (
+                    <img src={profileAvatarUrl} alt={userDisplayName} className="h-full w-full rounded-2xl object-cover" />
+                  ) : (
+                    <span>{userInitial}</span>
+                  )}
                   <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border border-slate-900 bg-emerald-400" />
-                  <span className="absolute inset-0 hidden items-center justify-center rounded-2xl bg-black/30 text-lg font-bold sm:flex">
-                    {userInitial}
-                  </span>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Bem-vindo de volta</p>
@@ -791,7 +834,6 @@ export default function DashboardPage() {
                 <tbody>
                   {filteredExpenses.map((expense) => {
                     const isMine = user?.email && expense.user_email === user.email;
-                    const isEditing = editingExpenseId === expense.id;
                     return (
                       <tr key={expense.id} className="border-t border-white/10">
                         <td className="p-2">
@@ -800,68 +842,19 @@ export default function DashboardPage() {
                           </span>
                         </td>
                         <td className="p-2">
-                          {isEditing ? (
-                            <select
-                              className="rounded-lg border border-white/10 bg-slate-950 px-2 py-1"
-                              value={editingExpenseForm.category}
-                              onChange={(e) =>
-                                setEditingExpenseForm((prev) => ({
-                                  ...prev,
-                                  category: e.target.value,
-                                }))
-                              }
-                            >
-                              {CATEGORY_OPTIONS.map((category) => (
-                                <option key={category.key} value={category.api}>
-                                  {category.label}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            API_CATEGORY_TO_LABEL[expense.category] || expense.category
-                          )}
+                          {API_CATEGORY_TO_LABEL[expense.category] || expense.category}
                         </td>
-                        <td className="p-2">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="w-24 rounded-lg border border-white/10 bg-slate-950 px-2 py-1"
-                              value={editingExpenseForm.amount}
-                              onChange={(e) =>
-                                setEditingExpenseForm((prev) => ({
-                                  ...prev,
-                                  amount: e.target.value,
-                                }))
-                              }
-                            />
-                          ) : (
-                            brl(expense.amount)
-                          )}
-                        </td>
+                        <td className="p-2">{brl(expense.amount)}</td>
                         <td className="p-2">{new Date(expense.created_at).toLocaleDateString("pt-BR")}</td>
                         <td className="p-2">
                           {isMine ? (
                             <div className="flex flex-wrap gap-1">
-                              {isEditing ? (
-                                <>
-                                  <button className="rounded-lg bg-emerald-600 px-2 py-1 text-xs" onClick={saveEditExpense}>
-                                    Salvar
-                                  </button>
-                                  <button className="rounded-lg bg-slate-700 px-2 py-1 text-xs" onClick={() => setEditingExpenseId(null)}>
-                                    Cancelar
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button className="rounded-lg bg-sky-600 px-2 py-1 text-xs" onClick={() => startEditExpense(expense)}>
-                                    Editar
-                                  </button>
-                                  <button className="rounded-lg bg-rose-600 px-2 py-1 text-xs" onClick={() => removeExpense(expense.id)}>
-                                    Excluir
-                                  </button>
-                                </>
-                              )}
+                              <button className="rounded-lg bg-sky-600 px-2 py-1 text-xs" onClick={() => openEditExpenseModal(expense)}>
+                                Editar
+                              </button>
+                              <button className="rounded-lg bg-rose-600 px-2 py-1 text-xs" onClick={() => openDeleteModal("expense", expense.id)}>
+                                Excluir
+                              </button>
                             </div>
                           ) : (
                             <span className="text-xs text-slate-400">Somente leitura</span>
@@ -890,7 +883,6 @@ export default function DashboardPage() {
                 <tbody>
                   {filteredIncomes.map((income) => {
                     const isMine = user?.email && income.user_email === user.email;
-                    const isEditing = editingIncomeId === income.id;
                     return (
                       <tr key={income.id} className="border-t border-white/10">
                         <td className="p-2">
@@ -898,42 +890,17 @@ export default function DashboardPage() {
                             {ownerLabel(income.user_email)}
                           </span>
                         </td>
-                        <td className="p-2">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              step="0.01"
-                              className="w-24 rounded-lg border border-white/10 bg-slate-950 px-2 py-1"
-                              value={editingIncomeAmount}
-                              onChange={(e) => setEditingIncomeAmount(e.target.value)}
-                            />
-                          ) : (
-                            brl(income.amount)
-                          )}
-                        </td>
+                        <td className="p-2">{brl(income.amount)}</td>
                         <td className="p-2">{new Date(income.created_at).toLocaleDateString("pt-BR")}</td>
                         <td className="p-2">
                           {isMine ? (
                             <div className="flex flex-wrap gap-1">
-                              {isEditing ? (
-                                <>
-                                  <button className="rounded-lg bg-emerald-600 px-2 py-1 text-xs" onClick={saveEditIncome}>
-                                    Salvar
-                                  </button>
-                                  <button className="rounded-lg bg-slate-700 px-2 py-1 text-xs" onClick={() => setEditingIncomeId(null)}>
-                                    Cancelar
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button className="rounded-lg bg-sky-600 px-2 py-1 text-xs" onClick={() => startEditIncome(income)}>
-                                    Editar
-                                  </button>
-                                  <button className="rounded-lg bg-rose-600 px-2 py-1 text-xs" onClick={() => removeIncome(income.id)}>
-                                    Excluir
-                                  </button>
-                                </>
-                              )}
+                              <button className="rounded-lg bg-sky-600 px-2 py-1 text-xs" onClick={() => openEditIncomeModal(income)}>
+                                Editar
+                              </button>
+                              <button className="rounded-lg bg-rose-600 px-2 py-1 text-xs" onClick={() => openDeleteModal("income", income.id)}>
+                                Excluir
+                              </button>
                             </div>
                           ) : (
                             <span className="text-xs text-slate-400">Somente leitura</span>
@@ -1085,6 +1052,93 @@ export default function DashboardPage() {
               ))}
             </div>
           </motion.section>
+
+          <AnimatePresence>
+            {editModal ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-3"
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 24, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 24, scale: 0.96 }}
+                  className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-950 p-4"
+                >
+                  <h4 className="text-lg font-semibold text-white">
+                    {editModal.type === "expense" ? "Editar Despesa" : "Editar Receita"}
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-400">Atualize os dados e salve para recalcular dashboard e graficos.</p>
+
+                  <div className="mt-4 space-y-3">
+                    {editModal.type === "expense" ? (
+                      <select
+                        className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                        value={editModal.category}
+                        onChange={(e) => setEditModal((prev) => ({ ...prev, category: e.target.value }))}
+                      >
+                        {CATEGORY_OPTIONS.map((category) => (
+                          <option key={category.key} value={category.api}>
+                            {category.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                      value={editModal.amount}
+                      placeholder={editModal.type === "expense" ? "Valor da despesa" : "Valor da receita"}
+                      onChange={(e) => setEditModal((prev) => ({ ...prev, amount: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button className="rounded-xl bg-slate-700 px-3 py-2 text-sm" onClick={() => setEditModal(null)}>
+                      Cancelar
+                    </button>
+                    <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold" onClick={handleSaveEdit}>
+                      Salvar
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {deleteModal ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-3"
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 24, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 24, scale: 0.96 }}
+                  className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-950 p-4"
+                >
+                  <h4 className="text-lg font-semibold text-white">Confirmar exclusao</h4>
+                  <p className="mt-2 text-sm text-slate-300">Tem certeza que deseja excluir este lançamento?</p>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button className="rounded-xl bg-slate-700 px-3 py-2 text-sm" onClick={() => setDeleteModal(null)}>
+                      Cancelar
+                    </button>
+                    <button className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-semibold" onClick={confirmDelete}>
+                      Excluir
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </motion.section>
       </div>
     </main>
