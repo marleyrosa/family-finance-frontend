@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Bar,
@@ -28,39 +28,45 @@ import {
 } from "../../dashboard/api";
 
 const CATEGORY_OPTIONS = [
-  { key: "supermarket", label: "Supermarket", api: "Supermercado" },
-  { key: "health", label: "Health", api: "Saude" },
-  { key: "transport", label: "Transport", api: "Transporte" },
-  { key: "services", label: "Services", api: "Serviços" },
-  { key: "home", label: "Home", api: "Casa" },
-  { key: "technology", label: "Technology", api: "Tecnologia" },
-  { key: "personal", label: "Personal", api: "Pessoal" },
-  { key: "fixed", label: "Fixed expenses", api: "Gastos fixo" },
+  { key: "supermarket", label: "Supermercado", api: "Supermercado" },
+  { key: "health", label: "Saude", api: "Saude" },
+  { key: "transport", label: "Transporte", api: "Transporte" },
+  { key: "services", label: "Servicos", api: "Serviços" },
+  { key: "home", label: "Casa", api: "Casa" },
+  { key: "technology", label: "Tecnologia", api: "Tecnologia" },
+  { key: "personal", label: "Pessoal", api: "Pessoal" },
+  { key: "fixed", label: "Gastos fixos", api: "Gastos fixo" },
 ];
 
 const ALLOWED_EXPENSE_CATEGORIES = new Set(CATEGORY_OPTIONS.map((category) => category.api));
 
 const API_CATEGORY_TO_LABEL = {
-  Supermercado: "Supermarket",
-  Saude: "Health",
-  Transporte: "Transport",
-  "Serviços": "Services",
-  Casa: "Home",
-  Tecnologia: "Technology",
-  Pessoal: "Personal",
-  "Gastos fixo": "Fixed expenses",
+  Supermercado: "Supermercado",
+  Saude: "Saude",
+  Transporte: "Transporte",
+  "Serviços": "Servicos",
+  Casa: "Casa",
+  Tecnologia: "Tecnologia",
+  Pessoal: "Pessoal",
+  "Gastos fixo": "Gastos fixos",
 };
 
 const PIE_COLORS = ["#9f7aea", "#0ea5e9", "#14b8a6", "#f59e0b", "#ef4444", "#ec4899", "#22c55e", "#6366f1"];
 const BAR_COLORS = ["#38bdf8", "#f43f5e", "#a78bfa", "#f59e0b", "#34d399", "#fb7185", "#22d3ee", "#818cf8"];
 
 const SIDEBAR_ITEMS = [
-  { id: "overview", label: "Overview" },
-  { id: "income", label: "Income" },
-  { id: "expenses", label: "Expenses" },
-  { id: "transactions", label: "Transactions" },
-  { id: "insights", label: "Insights" },
+  { id: "overview", label: "Visao geral" },
+  { id: "income", label: "Receitas" },
+  { id: "expenses", label: "Despesas" },
+  { id: "transactions", label: "Transacoes" },
+  { id: "insights", label: "Insights automaticos" },
 ];
+
+const TOAST_STYLES = {
+  success: "border-emerald-400/40 bg-emerald-500/20 text-emerald-100",
+  error: "border-rose-400/40 bg-rose-500/20 text-rose-100",
+  warning: "border-amber-400/40 bg-amber-500/20 text-amber-100",
+};
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -118,6 +124,16 @@ export default function DashboardPage() {
   const [editingExpenseForm, setEditingExpenseForm] = useState({ category: CATEGORY_OPTIONS[0].api, amount: "" });
   const [editingIncomeId, setEditingIncomeId] = useState(null);
   const [editingIncomeAmount, setEditingIncomeAmount] = useState("");
+  const [toasts, setToasts] = useState([]);
+  const lastNotificationKey = useRef("");
+
+  const pushToast = (type, title, message) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setToasts((prev) => [...prev, { id, type, title, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 4600);
+  };
 
   const loadDashboard = async (authToken) => {
     const [meData, expensesData, incomesData, splitData] = await Promise.all([
@@ -165,7 +181,9 @@ export default function DashboardPage() {
       try {
         await loadDashboard(savedToken);
       } catch (err) {
-        setError(err.message || "Falha ao carregar dashboard");
+        const message = err.message || "Falha ao carregar dashboard";
+        setError(message);
+        pushToast("error", "Erro ao carregar", message);
       } finally {
         setLoading(false);
       }
@@ -245,8 +263,8 @@ export default function DashboardPage() {
   );
 
   const totalExpenseChart = [
-    { name: "This month", income: monthlyIncome, expenses: monthlyExpense },
-    { name: "Family total", income: familyTotalIncome, expenses: familyTotalExpense },
+    { name: "Mes atual", income: monthlyIncome, expenses: monthlyExpense },
+    { name: "Total familiar", income: familyTotalIncome, expenses: familyTotalExpense },
   ];
 
   const goalProgress = goals.monthlyGoal > 0 ? Math.min((monthlyExpense / goals.monthlyGoal) * 100, 100) : 0;
@@ -266,7 +284,7 @@ export default function DashboardPage() {
         id: `income-${item.id}`,
         type: "income",
         owner: item.user_email,
-        category: "Income",
+        category: "Receitas",
         amount: Number(item.amount || 0),
         created_at: item.created_at,
       })),
@@ -279,32 +297,32 @@ export default function DashboardPage() {
     const notes = [];
 
     if (monthlyIncome === 0) {
-      notes.push({ level: "warning", text: "No income found for this month yet." });
+      notes.push({ level: "warning", text: "Nenhuma receita encontrada para este mes." });
     }
 
     if (committedPct >= 80) {
-      notes.push({ level: "danger", text: `Expenses are consuming ${committedPct.toFixed(1)}% of monthly income.` });
+      notes.push({ level: "danger", text: `As despesas estao consumindo ${committedPct.toFixed(1)}% das receitas do mes.` });
     } else {
-      notes.push({ level: "ok", text: `Healthy commitment level: ${committedPct.toFixed(1)}% of income.` });
+      notes.push({ level: "ok", text: `Comprometimento saudavel: ${committedPct.toFixed(1)}% das receitas.` });
     }
 
     if (goalProgress >= 100) {
-      notes.push({ level: "danger", text: "Monthly budget goal exceeded. Consider reducing variable categories." });
+      notes.push({ level: "danger", text: "Orcamento mensal estourado. Revise categorias variaveis." });
     } else if (goals.monthlyGoal > 0) {
-      notes.push({ level: "ok", text: `Budget goal usage is ${goalProgress.toFixed(1)}%.` });
+      notes.push({ level: "ok", text: `Uso da meta de orcamento: ${goalProgress.toFixed(1)}%.` });
     }
 
     if (savingsProgress >= 100) {
-      notes.push({ level: "ok", text: "Savings target achieved for this month." });
+      notes.push({ level: "ok", text: "Meta de economia atingida neste mes." });
     } else if (goals.savingsGoal > 0) {
-      notes.push({ level: "warning", text: `Savings progress at ${savingsProgress.toFixed(1)}%.` });
+      notes.push({ level: "warning", text: `Progresso da meta de economia: ${savingsProgress.toFixed(1)}%.` });
     }
 
     const topCategory = expensesByCategory[0];
     if (topCategory) {
       notes.push({
         level: "warning",
-        text: `${topCategory.category} is the top expense category at ${brl(topCategory.amount)} this month.`,
+        text: `${topCategory.category} e a principal categoria de despesa com ${brl(topCategory.amount)} no mes.`,
       });
     }
 
@@ -313,13 +331,58 @@ export default function DashboardPage() {
 
   const ownerLabel = (email) => {
     if (!email) {
-      return "Unknown";
+      return "Nao informado";
     }
     if (user?.email && email === user.email) {
-      return `${email} (you)`;
+      return `${email} (voce)`;
     }
     return email;
   };
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    const currentKey = `${monthFilter}-${monthlyIncome}-${monthlyExpense}-${goalProgress}-${savingsProgress}`;
+    if (lastNotificationKey.current === currentKey) {
+      return;
+    }
+    lastNotificationKey.current = currentKey;
+
+    pushToast(
+      "success",
+      "Resumo mensal",
+      `Receitas: ${brl(monthlyIncome)} | Despesas: ${brl(monthlyExpense)} | Saldo Familiar: ${brl(familyBalance)}`
+    );
+
+    if (committedPct >= 80) {
+      pushToast("warning", "Alerta de orcamento", `Despesas em ${committedPct.toFixed(1)}% das receitas do mes.`);
+    }
+
+    if (goals.savingsGoal > 0) {
+      if (savingsProgress >= 100) {
+        pushToast("success", "Meta de economia", "Parabens, sua meta de economia foi atingida.");
+      } else {
+        pushToast("warning", "Meta de economia", `Progresso atual: ${savingsProgress.toFixed(1)}%.`);
+      }
+    }
+
+    if (insights[0]?.text) {
+      pushToast("warning", "Insight automatico", insights[0].text);
+    }
+  }, [
+    committedPct,
+    familyBalance,
+    goalProgress,
+    goals.savingsGoal,
+    insights,
+    loading,
+    monthFilter,
+    monthlyExpense,
+    monthlyIncome,
+    savingsProgress,
+  ]);
 
   const handleAddExpense = async () => {
     if (!expenseForm.amount || Number(expenseForm.amount) <= 0) {
@@ -475,7 +538,7 @@ export default function DashboardPage() {
   };
 
   const familyMembersCount = (split.users || []).length;
-  const userDisplayName = user?.nome || user?.email || "FamilYMoney User";
+  const userDisplayName = user?.nome || user?.email || "Usuario FamilYMoney";
   const profileAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(userDisplayName)}&background=5b21b6&color=ffffff&bold=true`;
 
   if (loading) {
@@ -523,9 +586,9 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Welcome back</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Bem-vindo de volta</p>
                   <h1 className="font-display text-2xl font-semibold md:text-3xl">{userDisplayName}</h1>
-                  <p className="text-sm text-slate-300">{user?.email || ""} · {familyMembersCount} family members</p>
+                  <p className="text-sm text-slate-300">{user?.email || ""} · {familyMembersCount} membros da familia</p>
                 </div>
               </div>
 
@@ -534,25 +597,25 @@ export default function DashboardPage() {
                   className="rounded-xl bg-fuchsia-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-fuchsia-500"
                   onClick={() => setShowExpenseForm((v) => !v)}
                 >
-                  Add Expense
+                  Adicionar Despesa
                 </button>
                 <button
                   className="rounded-xl bg-sky-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-sky-500"
                   onClick={() => setShowIncomeForm((v) => !v)}
                 >
-                  Add Income
+                  Adicionar Receita
                 </button>
                 <button
                   className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
                   onClick={handleExportExcel}
                 >
-                  Export CSV
+                  Exportar Relatorio CSV
                 </button>
                 <button
                   className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-rose-500"
                   onClick={handleLogout}
                 >
-                  Logout
+                  Sair
                 </button>
               </div>
             </div>
@@ -581,7 +644,7 @@ export default function DashboardPage() {
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
               >
-                <option value="all">All categories</option>
+                <option value="all">Todas as categorias</option>
                 {CATEGORY_OPTIONS.map((category) => (
                   <option key={category.key} value={category.key}>
                     {category.label}
@@ -589,23 +652,35 @@ export default function DashboardPage() {
                 ))}
               </select>
               <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
-                Family income total: <strong className="text-white">{brl(familyTotalIncome)}</strong>
+                Receitas da familia: <strong className="text-white">{brl(familyTotalIncome)}</strong>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
-                Family balance: <strong className="text-white">{brl(familyBalance)}</strong>
+                Saldo Familiar: <strong className="text-white">{brl(familyBalance)}</strong>
               </div>
             </div>
           </motion.header>
+
+          <div className="pointer-events-none fixed right-3 top-3 z-50 flex w-[min(92vw,380px)] flex-col gap-2">
+            {toasts.map((toast) => (
+              <div
+                key={toast.id}
+                className={`pointer-events-auto rounded-xl border px-3 py-2 text-sm shadow-lg backdrop-blur ${TOAST_STYLES[toast.type]}`}
+              >
+                <p className="font-semibold">{toast.title}</p>
+                <p className="mt-0.5 text-xs opacity-95">{toast.message}</p>
+              </div>
+            ))}
+          </div>
 
           {error ? <p className="rounded-xl bg-rose-500/20 p-3 text-sm text-rose-100">{error}</p> : null}
 
           <motion.section variants={itemVariants} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {[
-              { title: "Monthly income", value: brl(monthlyIncome), tone: "from-sky-500/25 to-sky-300/5" },
-              { title: "Monthly expenses", value: brl(monthlyExpense), tone: "from-fuchsia-500/25 to-fuchsia-300/5" },
-              { title: "Monthly balance", value: brl(balance), tone: "from-emerald-500/25 to-emerald-300/5" },
-              { title: "Income committed", value: `${committedPct.toFixed(1)}%`, tone: "from-orange-500/25 to-orange-300/5" },
-              { title: "Family balance", value: brl(familyBalance), tone: "from-violet-500/25 to-violet-300/5" },
+              { title: "Receitas do mes", value: brl(monthlyIncome), tone: "from-sky-500/25 to-sky-300/5" },
+              { title: "Despesas do mes", value: brl(monthlyExpense), tone: "from-fuchsia-500/25 to-fuchsia-300/5" },
+              { title: "Saldo do mes", value: brl(balance), tone: "from-emerald-500/25 to-emerald-300/5" },
+              { title: "Comprometimento", value: `${committedPct.toFixed(1)}%`, tone: "from-orange-500/25 to-orange-300/5" },
+              { title: "Saldo Familiar", value: brl(familyBalance), tone: "from-violet-500/25 to-violet-300/5" },
             ].map((card) => (
               <motion.div
                 key={card.title}
@@ -621,7 +696,7 @@ export default function DashboardPage() {
 
           {showExpenseForm ? (
             <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
-              <h3 className="mb-3 text-lg font-semibold">New Expense</h3>
+              <h3 className="mb-3 text-lg font-semibold">Nova Despesa</h3>
               <div className="grid gap-2 md:grid-cols-3">
                 <select
                   className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
@@ -638,12 +713,12 @@ export default function DashboardPage() {
                   type="number"
                   step="0.01"
                   className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
-                  placeholder="Amount"
+                  placeholder="Valor da despesa"
                   value={expenseForm.amount}
                   onChange={(e) => setExpenseForm((prev) => ({ ...prev, amount: e.target.value }))}
                 />
                 <button className="rounded-xl bg-fuchsia-600 px-3 py-2 font-medium text-white" onClick={handleAddExpense}>
-                  Save Expense
+                  Salvar Despesa
                 </button>
               </div>
             </motion.section>
@@ -651,28 +726,28 @@ export default function DashboardPage() {
 
           {showIncomeForm ? (
             <motion.section variants={itemVariants} id="income" className="frosted rounded-2xl border border-white/10 p-4">
-              <h3 className="mb-3 text-lg font-semibold">New Income</h3>
+              <h3 className="mb-3 text-lg font-semibold">Nova Receita</h3>
               <div className="grid gap-2 md:grid-cols-3">
                 <input
                   type="number"
                   step="0.01"
                   className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
-                  placeholder="Amount"
+                  placeholder="Valor da receita"
                   value={incomeForm.amount}
                   onChange={(e) => setIncomeForm({ amount: e.target.value })}
                 />
                 <button className="rounded-xl bg-sky-600 px-3 py-2 font-medium text-white" onClick={handleAddIncome}>
-                  Save Income
+                  Salvar Receita
                 </button>
               </div>
             </motion.section>
           ) : null}
 
           <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
-            <h3 className="mb-3 text-lg font-semibold">Goals and savings</h3>
+            <h3 className="mb-3 text-lg font-semibold">Metas e economia</h3>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm text-slate-300">Monthly budget goal</label>
+                <label className="mb-1 block text-sm text-slate-300">Meta de Orcamento Mensal</label>
                 <input
                   type="number"
                   className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
@@ -682,10 +757,10 @@ export default function DashboardPage() {
                 <div className="mt-2 h-2 rounded-full bg-slate-800">
                   <div className="h-2 rounded-full bg-fuchsia-500" style={{ width: `${goalProgress}%` }} />
                 </div>
-                <p className="mt-1 text-xs text-slate-300">Used {goalProgress.toFixed(1)}% of monthly goal</p>
+                <p className="mt-1 text-xs text-slate-300">Uso da meta: {goalProgress.toFixed(1)}%</p>
               </div>
               <div>
-                <label className="mb-1 block text-sm text-slate-300">Savings target</label>
+                <label className="mb-1 block text-sm text-slate-300">Meta de Economia</label>
                 <input
                   type="number"
                   className="w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
@@ -695,22 +770,22 @@ export default function DashboardPage() {
                 <div className="mt-2 h-2 rounded-full bg-slate-800">
                   <div className="h-2 rounded-full bg-emerald-500" style={{ width: `${savingsProgress}%` }} />
                 </div>
-                <p className="mt-1 text-xs text-slate-300">Saved {brl(monthlySavings)} ({savingsProgress.toFixed(1)}%)</p>
+                <p className="mt-1 text-xs text-slate-300">Economizado {brl(monthlySavings)} ({savingsProgress.toFixed(1)}%)</p>
               </div>
             </div>
           </motion.section>
 
           <motion.section variants={itemVariants} id="expenses" className="frosted rounded-2xl border border-white/10 p-4">
-            <h3 className="mb-3 text-lg font-semibold">Expense list</h3>
+            <h3 className="mb-3 text-lg font-semibold">Lista de Despesas</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-100">
                 <thead>
                   <tr>
-                    <th className="p-2">Owner</th>
-                    <th className="p-2">Category</th>
-                    <th className="p-2">Amount</th>
-                    <th className="p-2">Date</th>
-                    <th className="p-2">Actions</th>
+                    <th className="p-2">Responsavel</th>
+                    <th className="p-2">Categoria</th>
+                    <th className="p-2">Valor</th>
+                    <th className="p-2">Data</th>
+                    <th className="p-2">Acoes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -771,25 +846,25 @@ export default function DashboardPage() {
                               {isEditing ? (
                                 <>
                                   <button className="rounded-lg bg-emerald-600 px-2 py-1 text-xs" onClick={saveEditExpense}>
-                                    Save
+                                    Salvar
                                   </button>
                                   <button className="rounded-lg bg-slate-700 px-2 py-1 text-xs" onClick={() => setEditingExpenseId(null)}>
-                                    Cancel
+                                    Cancelar
                                   </button>
                                 </>
                               ) : (
                                 <>
                                   <button className="rounded-lg bg-sky-600 px-2 py-1 text-xs" onClick={() => startEditExpense(expense)}>
-                                    Edit
+                                    Editar
                                   </button>
                                   <button className="rounded-lg bg-rose-600 px-2 py-1 text-xs" onClick={() => removeExpense(expense.id)}>
-                                    Delete
+                                    Excluir
                                   </button>
                                 </>
                               )}
                             </div>
                           ) : (
-                            <span className="text-xs text-slate-400">Read-only</span>
+                            <span className="text-xs text-slate-400">Somente leitura</span>
                           )}
                         </td>
                       </tr>
@@ -801,15 +876,15 @@ export default function DashboardPage() {
           </motion.section>
 
           <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
-            <h3 className="mb-3 text-lg font-semibold">Income list</h3>
+            <h3 className="mb-3 text-lg font-semibold">Lista de Receitas</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-100">
                 <thead>
                   <tr>
-                    <th className="p-2">Owner</th>
-                    <th className="p-2">Amount</th>
-                    <th className="p-2">Date</th>
-                    <th className="p-2">Actions</th>
+                    <th className="p-2">Responsavel</th>
+                    <th className="p-2">Valor</th>
+                    <th className="p-2">Data</th>
+                    <th className="p-2">Acoes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -843,25 +918,25 @@ export default function DashboardPage() {
                               {isEditing ? (
                                 <>
                                   <button className="rounded-lg bg-emerald-600 px-2 py-1 text-xs" onClick={saveEditIncome}>
-                                    Save
+                                    Salvar
                                   </button>
                                   <button className="rounded-lg bg-slate-700 px-2 py-1 text-xs" onClick={() => setEditingIncomeId(null)}>
-                                    Cancel
+                                    Cancelar
                                   </button>
                                 </>
                               ) : (
                                 <>
                                   <button className="rounded-lg bg-sky-600 px-2 py-1 text-xs" onClick={() => startEditIncome(income)}>
-                                    Edit
+                                    Editar
                                   </button>
                                   <button className="rounded-lg bg-rose-600 px-2 py-1 text-xs" onClick={() => removeIncome(income.id)}>
-                                    Delete
+                                    Excluir
                                   </button>
                                 </>
                               )}
                             </div>
                           ) : (
-                            <span className="text-xs text-slate-400">Read-only</span>
+                            <span className="text-xs text-slate-400">Somente leitura</span>
                           )}
                         </td>
                       </tr>
@@ -873,15 +948,15 @@ export default function DashboardPage() {
           </motion.section>
 
           <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
-            <h3 className="mb-3 text-lg font-semibold">Household split</h3>
+            <h3 className="mb-3 text-lg font-semibold">Divisao familiar proporcional</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-100">
                 <thead>
                   <tr>
-                    <th className="p-2">User</th>
-                    <th className="p-2">Income</th>
-                    <th className="p-2">Percentage</th>
-                    <th className="p-2">Amount to Pay</th>
+                    <th className="p-2">Pessoa</th>
+                    <th className="p-2">Receitas</th>
+                    <th className="p-2">Percentual</th>
+                    <th className="p-2">Valor a pagar</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -900,7 +975,7 @@ export default function DashboardPage() {
 
           <motion.section variants={itemVariants} className="grid gap-4 lg:grid-cols-3">
             <article className="frosted rounded-2xl border border-white/10 p-4">
-              <h3 className="mb-3 text-base font-semibold">Income vs expenses</h3>
+              <h3 className="mb-3 text-base font-semibold">Receitas vs Despesas</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={totalExpenseChart}>
@@ -916,7 +991,7 @@ export default function DashboardPage() {
             </article>
 
             <article className="frosted rounded-2xl border border-white/10 p-4">
-              <h3 className="mb-3 text-base font-semibold">Pie by expense category</h3>
+              <h3 className="mb-3 text-base font-semibold">Despesas por Categoria</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -932,7 +1007,7 @@ export default function DashboardPage() {
             </article>
 
             <article className="frosted rounded-2xl border border-white/10 p-4">
-              <h3 className="mb-3 text-base font-semibold">Category % of income</h3>
+              <h3 className="mb-3 text-base font-semibold">Categoria x % das Receitas</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={commitmentByCategory}>
@@ -952,7 +1027,7 @@ export default function DashboardPage() {
           </motion.section>
 
           <motion.section variants={itemVariants} id="transactions" className="frosted rounded-2xl border border-white/10 p-4">
-            <h3 className="mb-3 text-lg font-semibold">Recent transactions</h3>
+            <h3 className="mb-3 text-lg font-semibold">Transacoes Recentes</h3>
             <div className="relative pl-5">
               <span className="absolute left-2 top-1 h-[calc(100%-0.5rem)] w-px bg-white/15" />
               <div className="space-y-2">
@@ -969,7 +1044,7 @@ export default function DashboardPage() {
                     />
                     <div>
                       <p className="text-sm font-medium text-white">
-                        {tx.type === "expense" ? "Expense" : "Income"} · {tx.category}
+                        {tx.type === "expense" ? "Despesa" : "Receitas"} · {tx.category}
                       </p>
                       <div className="mt-1 flex items-center gap-2">
                         <span className="rounded-full bg-slate-800/80 px-2 py-0.5 text-[11px] text-slate-200">
@@ -989,7 +1064,7 @@ export default function DashboardPage() {
           </motion.section>
 
           <motion.section variants={itemVariants} id="insights" className="frosted rounded-2xl border border-white/10 p-4">
-            <h3 className="mb-3 text-lg font-semibold">Monthly insights and alerts</h3>
+            <h3 className="mb-3 text-lg font-semibold">Insights e alertas automaticos</h3>
             <div className="space-y-2">
               {insights.map((note, index) => (
                 <motion.div

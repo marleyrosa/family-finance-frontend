@@ -27,7 +27,7 @@ export async function apiRequest(path, options = {}, token) {
   }
 
   if (!response.ok) {
-    const detail = data && data.detail ? data.detail : `Request failed: ${response.status}`;
+    const detail = data && data.detail ? data.detail : `Falha na requisicao: ${response.status}`;
     const error = new Error(detail);
     error.status = response.status;
     throw error;

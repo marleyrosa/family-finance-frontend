@@ -32,7 +32,7 @@ export default function AuthPanel({ onLogin, onRegister, loading }) {
       className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-card/80 p-6 shadow-soft"
     >
       <h1 className="font-display text-2xl font-bold">FamilYMoney</h1>
-      <p className="mt-1 text-sm text-slate-300">Gestao familiar com divisao proporcional inteligente.</p>
+      <p className="mt-1 text-sm text-slate-300">Gestao financeira familiar com divisao proporcional inteligente.</p>
 
       <div className="mt-5 flex gap-2 rounded-xl bg-slate-900/80 p-1">
         <button
@@ -69,7 +69,7 @@ export default function AuthPanel({ onLogin, onRegister, loading }) {
           name="email"
           value={form.email}
           onChange={updateField}
-          placeholder="Email"
+          placeholder="seuemail@dominio.com"
           required
         />
 
@@ -79,12 +79,12 @@ export default function AuthPanel({ onLogin, onRegister, loading }) {
           name="password"
           value={form.password}
           onChange={updateField}
-          placeholder="Senha"
+          placeholder="Digite sua senha"
           required
         />
 
         <button type="submit" className="w-full rounded-xl bg-accent px-4 py-2 font-semibold text-slate-950" disabled={loading}>
-          {loading ? "Processando..." : mode === "login" ? "Acessar" : "Criar conta"}
+          {loading ? "Processando..." : mode === "login" ? "Entrar" : "Criar conta"}
         </button>
       </form>
     </motion.section>
