@@ -1,7 +1,9 @@
 "use client";
 
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://family-finance-backend.onrender.com";
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "https://family-finance-backend-0r19.onrender.com";
 
 export async function apiRequest(path, options = {}, token) {
   const headers = {
@@ -35,19 +37,39 @@ export async function apiRequest(path, options = {}, token) {
 }
 
 export async function login(email, password) {
-  return apiRequest("/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
+  const form = new URLSearchParams();
+  form.append("username", email);
+  form.append("password", password);
+
+  try {
+    return await apiRequest("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form.toString(),
+    });
+  } catch (error) {
+    return apiRequest("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+  }
 }
 
 export async function register(nome, email, password) {
-  return apiRequest("/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nome, email, password }),
-  });
+  try {
+    return await apiRequest("/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nome, email, password }),
+    });
+  } catch (error) {
+    return apiRequest("/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nome, email, password }),
+    });
+  }
 }
 
 export async function getDashboard(token, mes, ano) {

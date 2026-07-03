@@ -14,6 +14,9 @@ export default function AuthPanel({ onLogin, onRegister, loading }) {
 
   async function submit(event) {
     event.preventDefault();
+    if (loading) {
+      return;
+    }
     if (mode === "login") {
       await onLogin(form.email, form.password);
       return;
@@ -80,7 +83,7 @@ export default function AuthPanel({ onLogin, onRegister, loading }) {
           required
         />
 
-        <button className="w-full rounded-xl bg-accent px-4 py-2 font-semibold text-slate-950" disabled={loading}>
+        <button type="submit" className="w-full rounded-xl bg-accent px-4 py-2 font-semibold text-slate-950" disabled={loading}>
           {loading ? "Processando..." : mode === "login" ? "Acessar" : "Criar conta"}
         </button>
       </form>

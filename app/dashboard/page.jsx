@@ -13,7 +13,10 @@ import {
   YAxis,
 } from "recharts";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://family-finance-backend-0r19.onrender.com";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "https://family-finance-backend-0r19.onrender.com";
 
 const DEFAULT_CATEGORIES = [
   "Supermercado",
