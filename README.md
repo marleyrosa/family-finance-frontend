@@ -1,4 +1,4 @@
-# Frontend - Family Finance
+# Frontend - FamilYMoney
 
 Aplicacao Next.js com dashboard financeiro moderno, dark mode, graficos animados e suporte PWA.
 
@@ -41,3 +41,22 @@ npm run dev
 ```
 
 Acesso: <http://localhost:3000>
+
+## V2 Upgrade Checklist
+
+- [x] Rename app to FamilYMoney
+- [x] User avatar and profile header
+- [x] Show logged user name
+- [x] Show income owner and expense owner
+- [x] Total family income and balance
+- [x] Edit/Delete income
+- [x] Edit/Delete expense
+- [x] Recent transactions list
+- [x] Sidebar navigation
+- [x] Nubank-style UI
+- [x] Stronger Framer Motion animations
+- [x] Pie chart by expense category
+- [x] Bar chart income vs expenses
+- [x] Category percentage of income
+- [x] Monthly insights and alerts
+- [x] Responsive mobile design

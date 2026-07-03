@@ -75,3 +75,87 @@ export async function register(nome, email, password) {
 export async function getDashboard(token, mes, ano) {
   return apiRequest(`/dashboard?mes=${mes}&ano=${ano}`, {}, token);
 }
+
+export async function getCurrentUser(token) {
+  return apiRequest("/auth/me", {}, token);
+}
+
+export async function listExpenses(token) {
+  return apiRequest("/expenses", {}, token);
+}
+
+export async function listIncomes(token) {
+  return apiRequest("/incomes", {}, token);
+}
+
+export async function getSplit(token) {
+  return apiRequest("/split", {}, token);
+}
+
+export async function createExpense(token, payload) {
+  return apiRequest(
+    "/expense",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export async function updateExpense(token, expenseId, payload) {
+  return apiRequest(
+    `/expense/${expenseId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export async function deleteExpense(token, expenseId) {
+  return apiRequest(
+    `/expense/${expenseId}`,
+    {
+      method: "DELETE",
+    },
+    token
+  );
+}
+
+export async function createIncome(token, payload) {
+  return apiRequest(
+    "/income",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export async function updateIncome(token, incomeId, payload) {
+  return apiRequest(
+    `/income/${incomeId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export async function deleteIncome(token, incomeId) {
+  return apiRequest(
+    `/income/${incomeId}`,
+    {
+      method: "DELETE",
+    },
+    token
+  );
+}

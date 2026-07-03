@@ -31,7 +31,7 @@ export default function AuthPanel({ onLogin, onRegister, loading }) {
       transition={{ duration: 0.45 }}
       className="mx-auto w-full max-w-md rounded-2xl border border-white/10 bg-card/80 p-6 shadow-soft"
     >
-      <h1 className="font-display text-2xl font-bold">Family Finance</h1>
+      <h1 className="font-display text-2xl font-bold">FamilYMoney</h1>
       <p className="mt-1 text-sm text-slate-300">Gestao familiar com divisao proporcional inteligente.</p>
 
       <div className="mt-5 flex gap-2 rounded-xl bg-slate-900/80 p-1">

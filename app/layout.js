@@ -7,7 +7,7 @@ const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
 const sora = Sora({ subsets: ["latin"], variable: "--font-sora" });
 
 export const metadata = {
-  title: "Family Finance",
+  title: "FamilYMoney",
   description: "Plataforma de gestao financeira familiar",
   manifest: "/manifest.json",
   icons: {
