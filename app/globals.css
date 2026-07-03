@@ -21,14 +21,15 @@ a {
 
 tr th,
 tr td {
-  border: 1px solid #e6e6e6;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 tr th {
-  background-color: #f5f5f5;
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .frosted {
   background: linear-gradient(180deg, rgba(19, 31, 45, 0.82), rgba(9, 16, 24, 0.78));
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
