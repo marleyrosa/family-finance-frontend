@@ -1,8 +1,16 @@
-const CACHE_NAME = "family-finance-v23";
-const STATIC_ASSETS = ["/", "/offline", "/manifest.webmanifest", "/icons/icon-192.svg", "/icons/icon-512.svg"];
+const APP_VERSION = "v3.0.1";
+const CACHE_NAME = `family-finance-${APP_VERSION}`;
+const OFFLINE_URL = "/offline";
+const PRECACHE_ASSETS = [
+  "/",
+  OFFLINE_URL,
+  "/manifest.webmanifest?v=v3.0.1",
+  "/icons/icon-192.svg",
+  "/icons/icon-512.svg",
+];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_ASSETS)));
   self.skipWaiting();
 });
 
@@ -15,6 +23,40 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+async function networkFirst(request, fallbackPath) {
+  try {
+    const response = await fetch(request, { cache: "no-store" });
+    const cache = await caches.open(CACHE_NAME);
+    cache.put(request, response.clone());
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) {
+      return cached;
+    }
+    if (fallbackPath) {
+      const fallback = await caches.match(fallbackPath);
+      if (fallback) {
+        return fallback;
+      }
+    }
+    return new Response("Offline", { status: 503, statusText: "Offline" });
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
+  const networkPromise = fetch(request)
+    .then((response) => {
+      cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => null);
+
+  return cached || networkPromise || new Response("Offline", { status: 503, statusText: "Offline" });
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") {
     return;
@@ -26,25 +68,36 @@ self.addEventListener("fetch", (event) => {
   }
 
   const isNavigation = event.request.mode === "navigate";
+  const isAppShell =
+    event.request.destination === "script" ||
+    event.request.destination === "style" ||
+    event.request.destination === "worker";
+  const isManifest = url.pathname.endsWith("manifest.webmanifest") || url.pathname.endsWith("manifest.json");
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
+  if (isNavigation) {
+    event.respondWith(networkFirst(event.request, OFFLINE_URL));
+    return;
+  }
 
-      return fetch(event.request)
-        .then((response) => {
-          const cloned = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, cloned));
-          return response;
-        })
-        .catch(() => (isNavigation ? caches.match("/offline") : caches.match("/")));
-    })
-  );
+  if (isManifest) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+
+  if (isAppShell) {
+    event.respondWith(staleWhileRevalidate(event.request));
+    return;
+  }
+
+  event.respondWith(staleWhileRevalidate(event.request));
 });
 
 self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") {
+    self.skipWaiting();
+    return;
+  }
+
   if (event.data?.type === "SHOW_NOTIFICATION") {
     const title = event.data.title || "FamilYMoney";
     const options = {
