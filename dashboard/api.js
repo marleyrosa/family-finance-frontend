@@ -159,3 +159,85 @@ export async function deleteIncome(token, incomeId) {
     token
   );
 }
+
+export async function listPersonalIncomes(token) {
+  return apiRequest("/personal/incomes", {}, token);
+}
+
+export async function listPersonalExpenses(token) {
+  return apiRequest("/personal/expenses", {}, token);
+}
+
+export async function listPersonalInvestments(token) {
+  return apiRequest("/personal/investments", {}, token);
+}
+
+export async function createPersonalIncome(token, payload) {
+  return apiRequest(
+    "/personal/income",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export async function createPersonalExpense(token, payload) {
+  return apiRequest(
+    "/personal/expense",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export async function createPersonalInvestment(token, payload) {
+  return apiRequest(
+    "/personal/investment",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export async function deletePersonalIncome(token, id) {
+  return apiRequest(
+    `/personal/incomes/${id}`,
+    {
+      method: "DELETE",
+    },
+    token
+  );
+}
+
+export async function deletePersonalExpense(token, id) {
+  return apiRequest(
+    `/personal/expenses/${id}`,
+    {
+      method: "DELETE",
+    },
+    token
+  );
+}
+
+export async function deletePersonalInvestment(token, id) {
+  return apiRequest(
+    `/personal/investments/${id}`,
+    {
+      method: "DELETE",
+    },
+    token
+  );
+}
+
+export async function getPersonalSummary(token, mes, ano) {
+  return apiRequest(`/personal/summary?mes=${mes}&ano=${ano}`, {}, token);
+}

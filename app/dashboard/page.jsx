@@ -19,12 +19,22 @@ import {
 import {
   createExpense,
   createIncome,
+  createPersonalExpense,
+  createPersonalIncome,
+  createPersonalInvestment,
   deleteExpense,
   deleteIncome,
+  deletePersonalExpense,
+  deletePersonalIncome,
+  deletePersonalInvestment,
   getCurrentUser,
+  getPersonalSummary,
   getSplit,
   listExpenses,
   listIncomes,
+  listPersonalExpenses,
+  listPersonalIncomes,
+  listPersonalInvestments,
   updateExpense,
   updateIncome,
 } from "../../dashboard/api";
@@ -56,13 +66,24 @@ const API_CATEGORY_TO_LABEL = {
 const PIE_COLORS = ["#9f7aea", "#0ea5e9", "#14b8a6", "#f59e0b", "#ef4444", "#ec4899", "#22c55e", "#6366f1"];
 const BAR_COLORS = ["#38bdf8", "#f43f5e", "#a78bfa", "#f59e0b", "#34d399", "#fb7185", "#22d3ee", "#818cf8"];
 
-const SIDEBAR_ITEMS = [
+const FAMILY_SIDEBAR_ITEMS = [
   { id: "overview", label: "Visao geral" },
   { id: "income", label: "Receitas" },
   { id: "expenses", label: "Despesas" },
   { id: "transactions", label: "Transacoes" },
   { id: "insights", label: "Insights automaticos" },
 ];
+
+const PERSONAL_SIDEBAR_ITEMS = [
+  { id: "personal-overview", label: "Financas Pessoais" },
+  { id: "personal-income", label: "Receitas Pessoais" },
+  { id: "personal-expenses", label: "Despesas Pessoais" },
+  { id: "personal-investments", label: "Investimentos" },
+  { id: "personal-charts", label: "Graficos Pessoais" },
+];
+
+const PERSONAL_CATEGORIES = ["Moradia", "Lazer", "Saude", "Transporte", "Educacao", "Assinaturas", "Outros"];
+const INVESTMENT_TYPES = ["Renda fixa", "Acoes", "Fundos", "Crypto", "Previdencia", "Outros"];
 
 const TOAST_STYLES = {
   success: "border-emerald-400/40 bg-emerald-500/20 text-emerald-100",
@@ -109,6 +130,7 @@ const brl = (value) =>
   });
 
 export default function DashboardPage() {
+  const [activeTab, setActiveTab] = useState("family");
   const [token, setToken] = useState("");
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -117,9 +139,16 @@ export default function DashboardPage() {
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [split, setSplit] = useState({ users: [] });
+  const [personalSummary, setPersonalSummary] = useState({ income: 0, expense: 0, investments: 0, balance: 0 });
+  const [personalIncomes, setPersonalIncomes] = useState([]);
+  const [personalExpenses, setPersonalExpenses] = useState([]);
+  const [personalInvestments, setPersonalInvestments] = useState([]);
 
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showIncomeForm, setShowIncomeForm] = useState(false);
+  const [showPersonalIncomeForm, setShowPersonalIncomeForm] = useState(false);
+  const [showPersonalExpenseForm, setShowPersonalExpenseForm] = useState(false);
+  const [showPersonalInvestmentForm, setShowPersonalInvestmentForm] = useState(false);
 
   const [monthFilter, setMonthFilter] = useState(currentMonth());
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -129,6 +158,24 @@ export default function DashboardPage() {
 
   const [expenseForm, setExpenseForm] = useState({ category: CATEGORY_OPTIONS[0].api, amount: "", competence: currentMonth() });
   const [incomeForm, setIncomeForm] = useState({ amount: "", competence: currentMonth() });
+  const [personalIncomeForm, setPersonalIncomeForm] = useState({
+    description: "",
+    amount: "",
+    category: PERSONAL_CATEGORIES[0],
+    competence: currentMonth(),
+  });
+  const [personalExpenseForm, setPersonalExpenseForm] = useState({
+    description: "",
+    amount: "",
+    category: PERSONAL_CATEGORIES[0],
+    competence: currentMonth(),
+  });
+  const [personalInvestmentForm, setPersonalInvestmentForm] = useState({
+    description: "",
+    amount: "",
+    investment_type: INVESTMENT_TYPES[0],
+    competence: currentMonth(),
+  });
   const [goals, setGoals] = useState({ monthlyGoal: 0, savingsGoal: 0 });
 
   const [editModal, setEditModal] = useState(null);
@@ -146,17 +193,23 @@ export default function DashboardPage() {
   };
 
   const loadDashboard = async (authToken) => {
-    const [meData, expensesData, incomesData, splitData] = await Promise.all([
+    const [meData, expensesData, incomesData, splitData, pIncomes, pExpenses, pInvestments] = await Promise.all([
       getCurrentUser(authToken),
       listExpenses(authToken),
       listIncomes(authToken),
       getSplit(authToken),
+      listPersonalIncomes(authToken),
+      listPersonalExpenses(authToken),
+      listPersonalInvestments(authToken),
     ]);
 
     setUser(meData || null);
     setExpenses(expensesData || []);
     setIncomes(incomesData || []);
     setSplit(splitData || { users: [] });
+    setPersonalIncomes(pIncomes || []);
+    setPersonalExpenses(pExpenses || []);
+    setPersonalInvestments(pInvestments || []);
   };
 
   useEffect(() => {
@@ -184,6 +237,9 @@ export default function DashboardPage() {
   useEffect(() => {
     setExpenseForm((prev) => ({ ...prev, competence: monthFilter }));
     setIncomeForm((prev) => ({ ...prev, competence: monthFilter }));
+    setPersonalIncomeForm((prev) => ({ ...prev, competence: monthFilter }));
+    setPersonalExpenseForm((prev) => ({ ...prev, competence: monthFilter }));
+    setPersonalInvestmentForm((prev) => ({ ...prev, competence: monthFilter }));
   }, [monthFilter]);
 
   useEffect(() => {
@@ -606,6 +662,216 @@ export default function DashboardPage() {
     };
   }, [expenses, incomes, previousMonthFilter]);
 
+  const filteredPersonalIncomes = useMemo(
+    () => personalIncomes.filter((item) => monthKeyFromValue(item.competencia || item.created_at) === monthFilter),
+    [personalIncomes, monthFilter]
+  );
+
+  const filteredPersonalExpenses = useMemo(
+    () => personalExpenses.filter((item) => monthKeyFromValue(item.competencia || item.created_at) === monthFilter),
+    [personalExpenses, monthFilter]
+  );
+
+  const filteredPersonalInvestments = useMemo(
+    () => personalInvestments.filter((item) => monthKeyFromValue(item.competencia || item.created_at) === monthFilter),
+    [personalInvestments, monthFilter]
+  );
+
+  const personalIncomeTotal = useMemo(
+    () => filteredPersonalIncomes.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+    [filteredPersonalIncomes]
+  );
+  const personalExpenseTotal = useMemo(
+    () => filteredPersonalExpenses.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+    [filteredPersonalExpenses]
+  );
+  const personalInvestmentTotal = useMemo(
+    () => filteredPersonalInvestments.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+    [filteredPersonalInvestments]
+  );
+  const personalBalance = personalIncomeTotal - personalExpenseTotal - personalInvestmentTotal;
+
+  const personalExpensesByCategory = useMemo(() => {
+    const map = new Map();
+    for (const row of filteredPersonalExpenses) {
+      const key = row.category || "Outros";
+      map.set(key, (map.get(key) || 0) + Number(row.amount || 0));
+    }
+    return Array.from(map.entries()).map(([category, amount]) => ({ category, amount }));
+  }, [filteredPersonalExpenses]);
+
+  const personalIncomeVsExpense = useMemo(
+    () => [{ name: "Pessoal", receitas: personalIncomeTotal, despesas: personalExpenseTotal, investimentos: personalInvestmentTotal }],
+    [personalIncomeTotal, personalExpenseTotal, personalInvestmentTotal]
+  );
+
+  const personalInvestmentsEvolution = useMemo(() => {
+    const map = new Map();
+    for (const row of personalInvestments) {
+      const key = monthKeyFromValue(row.competencia || row.created_at);
+      map.set(key, (map.get(key) || 0) + Number(row.amount || 0));
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([mes, valor]) => ({ mes, valor }));
+  }, [personalInvestments]);
+
+  const loadPersonalSummary = async (authToken, monthValue) => {
+    const [ano, mes] = monthValue.split("-").map(Number);
+    const summary = await getPersonalSummary(authToken, mes, ano);
+    setPersonalSummary(summary || { income: 0, expense: 0, investments: 0, balance: 0 });
+  };
+
+  useEffect(() => {
+    if (!token) return;
+    loadPersonalSummary(token, monthFilter).catch(() => {
+      setPersonalSummary({ income: 0, expense: 0, investments: 0, balance: 0 });
+    });
+  }, [token, monthFilter, personalIncomes, personalExpenses, personalInvestments]);
+
+  useEffect(() => {
+    if (!notificationEnabled || loading || activeTab !== "personal") {
+      return;
+    }
+
+    if (personalExpenseTotal > personalIncomeTotal * 0.8 && personalIncomeTotal > 0) {
+      pushToast("warning", "Alerta pessoal", "Seu gasto pessoal esta elevado neste mes.");
+      sendLocalNotification("Alerta pessoal", "Seu gasto pessoal esta elevado neste mes.");
+    }
+
+    if (personalInvestmentTotal > 0 && personalInvestmentTotal >= personalIncomeTotal * 0.2 && personalIncomeTotal > 0) {
+      pushToast("success", "Meta de investimento", "Voce esta mantendo um bom ritmo de investimento pessoal.");
+      sendLocalNotification("Meta de investimento", "Voce esta mantendo um bom ritmo de investimento pessoal.");
+    }
+
+    if (personalBalance < 0) {
+      pushToast("error", "Saldo pessoal negativo", "Ajuste receitas ou reduza despesas/investimentos no pessoal.");
+      sendLocalNotification("Saldo pessoal negativo", "Ajuste seu fluxo de caixa pessoal.");
+    }
+  }, [
+    activeTab,
+    loading,
+    notificationEnabled,
+    personalBalance,
+    personalExpenseTotal,
+    personalIncomeTotal,
+    personalInvestmentTotal,
+  ]);
+
+  const handleAddPersonalIncome = async () => {
+    if (!personalIncomeForm.description.trim() || Number(personalIncomeForm.amount) <= 0) {
+      setError("Preencha descricao e valor para receita pessoal");
+      return;
+    }
+    try {
+      await createPersonalIncome(token, {
+        description: personalIncomeForm.description,
+        amount: Number(personalIncomeForm.amount),
+        category: personalIncomeForm.category,
+        competencia: competenceDateFromMonth(personalIncomeForm.competence),
+      });
+      setPersonalIncomeForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter });
+      setShowPersonalIncomeForm(false);
+      await loadDashboard(token);
+    } catch (err) {
+      setError(err.message || "Erro ao adicionar receita pessoal");
+    }
+  };
+
+  const handleAddPersonalExpense = async () => {
+    if (!personalExpenseForm.description.trim() || Number(personalExpenseForm.amount) <= 0) {
+      setError("Preencha descricao e valor para despesa pessoal");
+      return;
+    }
+    try {
+      await createPersonalExpense(token, {
+        description: personalExpenseForm.description,
+        amount: Number(personalExpenseForm.amount),
+        category: personalExpenseForm.category,
+        competencia: competenceDateFromMonth(personalExpenseForm.competence),
+      });
+      setPersonalExpenseForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter });
+      setShowPersonalExpenseForm(false);
+      await loadDashboard(token);
+    } catch (err) {
+      setError(err.message || "Erro ao adicionar despesa pessoal");
+    }
+  };
+
+  const handleAddPersonalInvestment = async () => {
+    if (!personalInvestmentForm.description.trim() || Number(personalInvestmentForm.amount) <= 0) {
+      setError("Preencha descricao e valor para investimento pessoal");
+      return;
+    }
+    try {
+      await createPersonalInvestment(token, {
+        description: personalInvestmentForm.description,
+        amount: Number(personalInvestmentForm.amount),
+        investment_type: personalInvestmentForm.investment_type,
+        competencia: competenceDateFromMonth(personalInvestmentForm.competence),
+      });
+      setPersonalInvestmentForm({ description: "", amount: "", investment_type: INVESTMENT_TYPES[0], competence: monthFilter });
+      setShowPersonalInvestmentForm(false);
+      await loadDashboard(token);
+    } catch (err) {
+      setError(err.message || "Erro ao adicionar investimento pessoal");
+    }
+  };
+
+  const handleExportPersonalCsv = () => {
+    const rows = ["tipo,descricao,categoria_ou_tipo,valor,competencia"];
+    filteredPersonalIncomes.forEach((row) => {
+      rows.push(`receita,${row.description},${row.category},${row.amount},${row.competencia}`);
+    });
+    filteredPersonalExpenses.forEach((row) => {
+      rows.push(`despesa,${row.description},${row.category},${row.amount},${row.competencia}`);
+    });
+    filteredPersonalInvestments.forEach((row) => {
+      rows.push(`investimento,${row.description},${row.investment_type},${row.amount},${row.competencia}`);
+    });
+
+    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `relatorio_pessoal_${monthFilter}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportPersonalPdf = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text("FamilYMoney - Relatorio Pessoal", 14, 16);
+    doc.setFontSize(10);
+    doc.text(`Mes de referencia: ${monthFilter}`, 14, 24);
+
+    autoTable(doc, {
+      startY: 30,
+      head: [["Indicador", "Valor"]],
+      body: [
+        ["Receita Pessoal", brl(personalIncomeTotal)],
+        ["Despesas Pessoais", brl(personalExpenseTotal)],
+        ["Investimentos", brl(personalInvestmentTotal)],
+        ["Saldo Pessoal", brl(personalBalance)],
+      ],
+    });
+
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 8,
+      head: [["Tipo", "Descricao", "Categoria/Tipo", "Valor"]],
+      body: [
+        ...filteredPersonalIncomes.map((row) => ["Receita", row.description, row.category, brl(row.amount)]),
+        ...filteredPersonalExpenses.map((row) => ["Despesa", row.description, row.category, brl(row.amount)]),
+        ...filteredPersonalInvestments.map((row) => ["Investimento", row.description, row.investment_type, brl(row.amount)]),
+      ],
+    });
+
+    doc.save(`relatorio_pessoal_${monthFilter}.pdf`);
+  };
+
   const handleExportPdf = () => {
     const doc = new jsPDF();
     const monthLabel = monthFilter;
@@ -795,6 +1061,7 @@ export default function DashboardPage() {
   const userDisplayName = user?.nome || user?.email || "Usuario FamilYMoney";
   const hasCustomAvatar = Boolean(avatarUrl);
   const profileAvatarUrl = avatarUrl;
+  const sidebarItems = activeTab === "family" ? FAMILY_SIDEBAR_ITEMS : PERSONAL_SIDEBAR_ITEMS;
 
   if (loading) {
     return <main className="p-6 text-slate-200">Carregando dashboard...</main>;
@@ -834,7 +1101,8 @@ export default function DashboardPage() {
             </label>
           </div>
           <nav className="mt-4 space-y-1">
-            {SIDEBAR_ITEMS.map((item) => (
+            <p className="px-3 py-1 text-xs uppercase tracking-[0.15em] text-slate-500">{activeTab === "family" ? "Financas da Familia" : "Financas Pessoais"}</p>
+            {sidebarItems.map((item) => (
               <a
                 key={item.id}
                 href={`#${item.id}`}
@@ -866,30 +1134,67 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <button
-                  className="rounded-xl bg-fuchsia-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-fuchsia-500"
-                  onClick={() => setShowExpenseForm((v) => !v)}
-                >
-                  Adicionar Despesa
-                </button>
-                <button
-                  className="rounded-xl bg-sky-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-sky-500"
-                  onClick={() => setShowIncomeForm((v) => !v)}
-                >
-                  Adicionar Receita
-                </button>
-                <button
-                  className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
-                  onClick={handleExportExcel}
-                >
-                  Exportar Relatorio CSV
-                </button>
-                <button
-                  className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
-                  onClick={handleExportPdf}
-                >
-                  Exportar PDF
-                </button>
+                {activeTab === "family" ? (
+                  <>
+                    <button
+                      className="rounded-xl bg-fuchsia-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-fuchsia-500"
+                      onClick={() => setShowExpenseForm((v) => !v)}
+                    >
+                      Adicionar Despesa
+                    </button>
+                    <button
+                      className="rounded-xl bg-sky-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-sky-500"
+                      onClick={() => setShowIncomeForm((v) => !v)}
+                    >
+                      Adicionar Receita
+                    </button>
+                    <button
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
+                      onClick={handleExportExcel}
+                    >
+                      Exportar Relatorio CSV
+                    </button>
+                    <button
+                      className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+                      onClick={handleExportPdf}
+                    >
+                      Exportar PDF
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="rounded-xl bg-sky-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-sky-500"
+                      onClick={() => setShowPersonalIncomeForm((v) => !v)}
+                    >
+                      Receita Pessoal
+                    </button>
+                    <button
+                      className="rounded-xl bg-fuchsia-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-fuchsia-500"
+                      onClick={() => setShowPersonalExpenseForm((v) => !v)}
+                    >
+                      Despesa Pessoal
+                    </button>
+                    <button
+                      className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-violet-500"
+                      onClick={() => setShowPersonalInvestmentForm((v) => !v)}
+                    >
+                      Investimento
+                    </button>
+                    <button
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
+                      onClick={handleExportPersonalCsv}
+                    >
+                      CSV Pessoal
+                    </button>
+                    <button
+                      className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
+                      onClick={handleExportPersonalPdf}
+                    >
+                      PDF Pessoal
+                    </button>
+                  </>
+                )}
                 <button
                   className="rounded-xl bg-amber-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-amber-500"
                   onClick={requestNotificationPermission}
@@ -906,7 +1211,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-              {SIDEBAR_ITEMS.map((item) => (
+              {sidebarItems.map((item) => (
                 <a
                   key={item.id}
                   href={`#${item.id}`}
@@ -915,6 +1220,25 @@ export default function DashboardPage() {
                   {item.label}
                 </a>
               ))}
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                  activeTab === "family" ? "bg-sky-600 text-white" : "bg-white/5 text-slate-200 hover:bg-white/10"
+                }`}
+                onClick={() => setActiveTab("family")}
+              >
+                Familia
+              </button>
+              <button
+                className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                  activeTab === "personal" ? "bg-fuchsia-600 text-white" : "bg-white/5 text-slate-200 hover:bg-white/10"
+                }`}
+                onClick={() => setActiveTab("personal")}
+              >
+                Pessoal
+              </button>
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-2 md:grid-cols-4">
@@ -978,7 +1302,7 @@ export default function DashboardPage() {
 
           {error ? <p className="rounded-xl bg-rose-500/20 p-3 text-sm text-rose-100">{error}</p> : null}
 
-          <motion.section variants={itemVariants} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <motion.section variants={itemVariants} className={`grid gap-3 sm:grid-cols-2 xl:grid-cols-4 ${activeTab === "family" ? "" : "hidden"}`}>
             {[
               { title: "Receitas do mes", value: brl(monthlyIncome), tone: "from-sky-500/25 to-sky-300/5" },
               { title: "Despesas do mes", value: brl(monthlyExpense), tone: "from-fuchsia-500/25 to-fuchsia-300/5" },
@@ -999,7 +1323,7 @@ export default function DashboardPage() {
           </motion.section>
 
           {showExpenseForm ? (
-            <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+            <motion.section variants={itemVariants} className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
               <h3 className="mb-3 text-lg font-semibold">Nova Despesa</h3>
               <div className="grid gap-2 md:grid-cols-4">
                 <select
@@ -1035,7 +1359,7 @@ export default function DashboardPage() {
           ) : null}
 
           {showIncomeForm ? (
-            <motion.section variants={itemVariants} id="income" className="frosted rounded-2xl border border-white/10 p-4">
+            <motion.section variants={itemVariants} id="income" className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
               <h3 className="mb-3 text-lg font-semibold">Nova Receita</h3>
               <div className="grid gap-2 md:grid-cols-3">
                 <input
@@ -1059,7 +1383,7 @@ export default function DashboardPage() {
             </motion.section>
           ) : null}
 
-          <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+          <motion.section variants={itemVariants} className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
             <h3 className="mb-3 text-lg font-semibold">Metas e economia</h3>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
@@ -1091,7 +1415,7 @@ export default function DashboardPage() {
             </div>
           </motion.section>
 
-          <motion.section variants={itemVariants} id="expenses" className="frosted rounded-2xl border border-white/10 p-4">
+          <motion.section variants={itemVariants} id="expenses" className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
             <h3 className="mb-3 text-lg font-semibold">Lista de Despesas</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-100">
@@ -1141,7 +1465,7 @@ export default function DashboardPage() {
             </div>
           </motion.section>
 
-          <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+          <motion.section variants={itemVariants} className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
             <h3 className="mb-3 text-lg font-semibold">Lista de Receitas</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-100">
@@ -1187,7 +1511,7 @@ export default function DashboardPage() {
             </div>
           </motion.section>
 
-          <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+          <motion.section variants={itemVariants} className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
             <h3 className="mb-3 text-lg font-semibold">Divisao familiar proporcional</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-slate-100">
@@ -1213,7 +1537,7 @@ export default function DashboardPage() {
             </div>
           </motion.section>
 
-          <motion.section variants={itemVariants} className="grid gap-4 lg:grid-cols-3">
+          <motion.section variants={itemVariants} className={`grid gap-4 lg:grid-cols-3 ${activeTab === "family" ? "" : "hidden"}`}>
             <article className="frosted rounded-2xl border border-white/10 p-4">
               <h3 className="mb-3 text-base font-semibold">Receitas vs Despesas</h3>
               <div className="h-64">
@@ -1266,7 +1590,7 @@ export default function DashboardPage() {
             </article>
           </motion.section>
 
-          <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+          <motion.section variants={itemVariants} className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
             <h3 className="mb-3 text-lg font-semibold">Relatorios mensais</h3>
             <div className="grid gap-3 md:grid-cols-4">
               <article className="rounded-xl border border-white/10 bg-white/5 p-3">
@@ -1296,7 +1620,7 @@ export default function DashboardPage() {
             </div>
           </motion.section>
 
-          <motion.section variants={itemVariants} id="transactions" className="frosted rounded-2xl border border-white/10 p-4">
+          <motion.section variants={itemVariants} id="transactions" className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
             <h3 className="mb-3 text-lg font-semibold">Transacoes Recentes</h3>
             <div className="relative pl-5">
               <span className="absolute left-2 top-1 h-[calc(100%-0.5rem)] w-px bg-white/15" />
@@ -1333,7 +1657,7 @@ export default function DashboardPage() {
             </div>
           </motion.section>
 
-          <motion.section variants={itemVariants} id="insights" className="frosted rounded-2xl border border-white/10 p-4">
+          <motion.section variants={itemVariants} id="insights" className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
             <h3 className="mb-3 text-lg font-semibold">Insights e alertas automaticos</h3>
             <div className="space-y-2">
               {insights.map((note, index) => (
@@ -1355,6 +1679,262 @@ export default function DashboardPage() {
               ))}
             </div>
           </motion.section>
+
+          <AnimatePresence mode="wait">
+            {activeTab === "personal" ? (
+              <motion.section
+                key="personal-layer"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ duration: 0.28 }}
+                className="space-y-4"
+              >
+                <motion.section variants={itemVariants} id="personal-overview" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { title: "Receita Pessoal", value: brl(personalIncomeTotal), tone: "from-sky-500/25 to-sky-300/5" },
+                    { title: "Despesas Pessoais", value: brl(personalExpenseTotal), tone: "from-fuchsia-500/25 to-fuchsia-300/5" },
+                    { title: "Investimentos", value: brl(personalInvestmentTotal), tone: "from-violet-500/25 to-violet-300/5" },
+                    { title: "Saldo Pessoal", value: brl(personalBalance), tone: "from-emerald-500/25 to-emerald-300/5" },
+                  ].map((card) => (
+                    <motion.div
+                      key={card.title}
+                      whileHover={{ scale: 1.02, y: -2 }}
+                      transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                      className={`rounded-2xl border border-white/10 bg-gradient-to-br ${card.tone} p-4 backdrop-blur-xl`}
+                    >
+                      <p className="text-sm text-slate-300">{card.title}</p>
+                      <h2 className="mt-2 text-2xl font-semibold text-white">{card.value}</h2>
+                    </motion.div>
+                  ))}
+                </motion.section>
+
+                {showPersonalIncomeForm ? (
+                  <motion.section variants={itemVariants} id="personal-income" className="frosted rounded-2xl border border-white/10 p-4">
+                    <h3 className="mb-3 text-lg font-semibold">Receitas Pessoais</h3>
+                    <div className="grid gap-2 md:grid-cols-4">
+                      <input
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        placeholder="Descricao"
+                        value={personalIncomeForm.description}
+                        onChange={(e) => setPersonalIncomeForm((prev) => ({ ...prev, description: e.target.value }))}
+                      />
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        placeholder="Valor"
+                        value={personalIncomeForm.amount}
+                        onChange={(e) => setPersonalIncomeForm((prev) => ({ ...prev, amount: e.target.value }))}
+                      />
+                      <input
+                        type="month"
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        value={personalIncomeForm.competence}
+                        onChange={(e) => setPersonalIncomeForm((prev) => ({ ...prev, competence: e.target.value }))}
+                      />
+                      <button className="rounded-xl bg-sky-600 px-3 py-2 text-white" onClick={handleAddPersonalIncome}>
+                        Salvar Receita Pessoal
+                      </button>
+                    </div>
+                  </motion.section>
+                ) : null}
+
+                {showPersonalExpenseForm ? (
+                  <motion.section variants={itemVariants} id="personal-expenses" className="frosted rounded-2xl border border-white/10 p-4">
+                    <h3 className="mb-3 text-lg font-semibold">Despesas Pessoais</h3>
+                    <div className="grid gap-2 md:grid-cols-5">
+                      <input
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        placeholder="Descricao"
+                        value={personalExpenseForm.description}
+                        onChange={(e) => setPersonalExpenseForm((prev) => ({ ...prev, description: e.target.value }))}
+                      />
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        placeholder="Valor"
+                        value={personalExpenseForm.amount}
+                        onChange={(e) => setPersonalExpenseForm((prev) => ({ ...prev, amount: e.target.value }))}
+                      />
+                      <select
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        value={personalExpenseForm.category}
+                        onChange={(e) => setPersonalExpenseForm((prev) => ({ ...prev, category: e.target.value }))}
+                      >
+                        {PERSONAL_CATEGORIES.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="month"
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        value={personalExpenseForm.competence}
+                        onChange={(e) => setPersonalExpenseForm((prev) => ({ ...prev, competence: e.target.value }))}
+                      />
+                      <button className="rounded-xl bg-fuchsia-600 px-3 py-2 text-white" onClick={handleAddPersonalExpense}>
+                        Salvar Despesa Pessoal
+                      </button>
+                    </div>
+                  </motion.section>
+                ) : null}
+
+                {showPersonalInvestmentForm ? (
+                  <motion.section variants={itemVariants} id="personal-investments" className="frosted rounded-2xl border border-white/10 p-4">
+                    <h3 className="mb-3 text-lg font-semibold">Investimentos Pessoais</h3>
+                    <div className="grid gap-2 md:grid-cols-5">
+                      <input
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        placeholder="Descricao"
+                        value={personalInvestmentForm.description}
+                        onChange={(e) => setPersonalInvestmentForm((prev) => ({ ...prev, description: e.target.value }))}
+                      />
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        placeholder="Valor"
+                        value={personalInvestmentForm.amount}
+                        onChange={(e) => setPersonalInvestmentForm((prev) => ({ ...prev, amount: e.target.value }))}
+                      />
+                      <select
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        value={personalInvestmentForm.investment_type}
+                        onChange={(e) => setPersonalInvestmentForm((prev) => ({ ...prev, investment_type: e.target.value }))}
+                      >
+                        {INVESTMENT_TYPES.map((kind) => (
+                          <option key={kind} value={kind}>
+                            {kind}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="month"
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                        value={personalInvestmentForm.competence}
+                        onChange={(e) => setPersonalInvestmentForm((prev) => ({ ...prev, competence: e.target.value }))}
+                      />
+                      <button className="rounded-xl bg-violet-600 px-3 py-2 text-white" onClick={handleAddPersonalInvestment}>
+                        Salvar Investimento
+                      </button>
+                    </div>
+                  </motion.section>
+                ) : null}
+
+                <motion.section variants={itemVariants} className="grid gap-4 lg:grid-cols-3" id="personal-charts">
+                  <article className="frosted rounded-2xl border border-white/10 p-4">
+                    <h3 className="mb-3 text-base font-semibold">Receita x Despesa Pessoal</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={personalIncomeVsExpense}>
+                          <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
+                          <XAxis dataKey="name" stroke="#cbd5e1" />
+                          <YAxis stroke="#cbd5e1" />
+                          <Tooltip />
+                          <Bar dataKey="receitas" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
+                          <Bar dataKey="despesas" fill="#e11d48" radius={[8, 8, 0, 0]} />
+                          <Bar dataKey="investimentos" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </article>
+
+                  <article className="frosted rounded-2xl border border-white/10 p-4">
+                    <h3 className="mb-3 text-base font-semibold">Despesas pessoais por categoria</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Tooltip />
+                          <Pie data={personalExpensesByCategory} dataKey="amount" nameKey="category" outerRadius={88} innerRadius={48}>
+                            {personalExpensesByCategory.map((entry, index) => (
+                              <Cell key={entry.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </article>
+
+                  <article className="frosted rounded-2xl border border-white/10 p-4">
+                    <h3 className="mb-3 text-base font-semibold">Evolucao dos investimentos</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={personalInvestmentsEvolution}>
+                          <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
+                          <XAxis dataKey="mes" stroke="#cbd5e1" />
+                          <YAxis stroke="#cbd5e1" />
+                          <Tooltip />
+                          <Bar dataKey="valor" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </article>
+                </motion.section>
+
+                <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+                  <h3 className="mb-3 text-lg font-semibold">Extrato pessoal do mes ({monthFilter})</h3>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div>
+                      <p className="mb-2 text-sm font-semibold text-slate-200">Receitas Pessoais</p>
+                      <div className="space-y-1 text-sm text-slate-300">
+                        {filteredPersonalIncomes.map((row) => (
+                          <div key={`pi-${row.id}`} className="flex items-center justify-between rounded-lg bg-white/5 px-2 py-1">
+                            <span>{row.description}</span>
+                            <span className="text-emerald-300">{brl(row.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-2 text-sm font-semibold text-slate-200">Despesas Pessoais</p>
+                      <div className="space-y-1 text-sm text-slate-300">
+                        {filteredPersonalExpenses.map((row) => (
+                          <div key={`pe-${row.id}`} className="flex items-center justify-between rounded-lg bg-white/5 px-2 py-1">
+                            <span>{row.description}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-rose-300">{brl(row.amount)}</span>
+                              <button className="rounded bg-rose-600 px-1 py-0.5 text-xs" onClick={() => deletePersonalExpense(token, row.id).then(() => loadDashboard(token))}>
+                                Del
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-2 text-sm font-semibold text-slate-200">Investimentos</p>
+                      <div className="space-y-1 text-sm text-slate-300">
+                        {filteredPersonalInvestments.map((row) => (
+                          <div key={`pv-${row.id}`} className="flex items-center justify-between rounded-lg bg-white/5 px-2 py-1">
+                            <span>{row.description}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-violet-300">{brl(row.amount)}</span>
+                              <button
+                                className="rounded bg-rose-600 px-1 py-0.5 text-xs"
+                                onClick={() => deletePersonalInvestment(token, row.id).then(() => loadDashboard(token))}
+                              >
+                                Del
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </motion.section>
+
+                <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+                  <h3 className="mb-2 text-lg font-semibold">Resumo pessoal da API</h3>
+                  <p className="text-sm text-slate-300">
+                    Receita: {brl(personalSummary.income)} | Despesas: {brl(personalSummary.expense)} | Investimentos: {brl(personalSummary.investments)} | Saldo: {brl(personalSummary.balance)}
+                  </p>
+                </motion.section>
+              </motion.section>
+            ) : null}
+          </AnimatePresence>
 
           <AnimatePresence>
             {editModal ? (
