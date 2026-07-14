@@ -561,7 +561,7 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    if (loading) {
+    if (loading || activeTab !== "family") {
       return;
     }
 
@@ -605,6 +605,7 @@ export default function DashboardPage() {
     goals.savingsGoal,
     insights,
     loading,
+    activeTab,
     monthFilter,
     monthlyExpense,
     monthlyIncome,
@@ -1805,6 +1806,95 @@ export default function DashboardPage() {
                       <h2 className="mt-2 text-2xl font-semibold text-white">{card.value}</h2>
                     </motion.div>
                   ))}
+                </motion.section>
+
+                <motion.section variants={itemVariants} className="grid gap-4 lg:grid-cols-3" id="personal-lists">
+                  <article className="frosted rounded-2xl border border-white/10 p-4">
+                    <h3 className="mb-3 text-base font-semibold">Lista de Receitas Pessoais</h3>
+                    <div className="space-y-2 text-sm text-slate-300">
+                      {filteredPersonalIncomes.length ? (
+                        filteredPersonalIncomes.map((row) => (
+                          <div key={`personal-income-${row.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium text-white">{row.description}</p>
+                                <p className="text-xs text-slate-400">{row.category} · {new Date(row.competencia || row.created_at).toLocaleDateString("pt-BR")}</p>
+                              </div>
+                              <p className="text-emerald-300">{brl(row.amount)}</p>
+                            </div>
+                            <div className="mt-2 flex gap-2">
+                              <button className="rounded bg-sky-600 px-2 py-1 text-xs" onClick={() => openPersonalEditModal("income", row)}>
+                                Editar
+                              </button>
+                              <button className="rounded bg-rose-600 px-2 py-1 text-xs" onClick={() => deletePersonalIncome(token, row.id).then(() => refreshPersonalData())}>
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-slate-400">Nenhuma receita pessoal encontrada.</p>
+                      )}
+                    </div>
+                  </article>
+
+                  <article className="frosted rounded-2xl border border-white/10 p-4">
+                    <h3 className="mb-3 text-base font-semibold">Lista de Despesas Pessoais</h3>
+                    <div className="space-y-2 text-sm text-slate-300">
+                      {filteredPersonalExpenses.length ? (
+                        filteredPersonalExpenses.map((row) => (
+                          <div key={`personal-expense-${row.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium text-white">{row.description}</p>
+                                <p className="text-xs text-slate-400">{row.category} · {new Date(row.competencia || row.created_at).toLocaleDateString("pt-BR")}</p>
+                              </div>
+                              <p className="text-rose-300">{brl(row.amount)}</p>
+                            </div>
+                            <div className="mt-2 flex gap-2">
+                              <button className="rounded bg-sky-600 px-2 py-1 text-xs" onClick={() => openPersonalEditModal("expense", row)}>
+                                Editar
+                              </button>
+                              <button className="rounded bg-rose-600 px-2 py-1 text-xs" onClick={() => deletePersonalExpense(token, row.id).then(() => refreshPersonalData())}>
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-slate-400">Nenhuma despesa pessoal encontrada.</p>
+                      )}
+                    </div>
+                  </article>
+
+                  <article className="frosted rounded-2xl border border-white/10 p-4">
+                    <h3 className="mb-3 text-base font-semibold">Lista de Investimentos Pessoais</h3>
+                    <div className="space-y-2 text-sm text-slate-300">
+                      {filteredPersonalInvestments.length ? (
+                        filteredPersonalInvestments.map((row) => (
+                          <div key={`personal-investment-${row.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium text-white">{row.description}</p>
+                                <p className="text-xs text-slate-400">{row.investment_type} · {new Date(row.competencia || row.created_at).toLocaleDateString("pt-BR")}</p>
+                              </div>
+                              <p className="text-violet-300">{brl(row.amount)}</p>
+                            </div>
+                            <div className="mt-2 flex gap-2">
+                              <button className="rounded bg-sky-600 px-2 py-1 text-xs" onClick={() => openPersonalEditModal("investment", row)}>
+                                Editar
+                              </button>
+                              <button className="rounded bg-rose-600 px-2 py-1 text-xs" onClick={() => deletePersonalInvestment(token, row.id).then(() => refreshPersonalData())}>
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-slate-400">Nenhum investimento pessoal encontrado.</p>
+                      )}
+                    </div>
+                  </article>
                 </motion.section>
 
                 {showPersonalIncomeForm ? (
