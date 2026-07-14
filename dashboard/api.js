@@ -184,6 +184,18 @@ export async function createPersonalIncome(token, payload) {
   );
 }
 
+export async function updatePersonalIncome(token, id, payload) {
+  return apiRequest(
+    `/personal/incomes/${id}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
 export async function createPersonalExpense(token, payload) {
   return apiRequest(
     "/personal/expense",
@@ -196,11 +208,35 @@ export async function createPersonalExpense(token, payload) {
   );
 }
 
+export async function updatePersonalExpense(token, id, payload) {
+  return apiRequest(
+    `/personal/expenses/${id}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
 export async function createPersonalInvestment(token, payload) {
   return apiRequest(
     "/personal/investment",
     {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export async function updatePersonalInvestment(token, id, payload) {
+  return apiRequest(
+    `/personal/investments/${id}`,
+    {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     },
@@ -240,4 +276,36 @@ export async function deletePersonalInvestment(token, id) {
 
 export async function getPersonalSummary(token, mes, ano) {
   return apiRequest(`/personal/summary?mes=${mes}&ano=${ano}`, {}, token);
+}
+
+async function fetchBinary(path, token) {
+  const headers = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_URL}${path}`, { headers });
+  if (!response.ok) {
+    let detail = `Falha na requisicao: ${response.status}`;
+    try {
+      const data = await response.json();
+      detail = data?.detail || detail;
+    } catch {
+      const text = await response.text();
+      if (text) {
+        detail = text;
+      }
+    }
+    throw new Error(detail);
+  }
+
+  return response.blob();
+}
+
+export async function fetchPersonalReportCsv(token, mes, ano) {
+  return fetchBinary(`/personal/reports/csv/${mes}/${ano}`, token);
+}
+
+export async function fetchPersonalReportPdf(token, mes, ano) {
+  return fetchBinary(`/personal/reports/pdf/${mes}/${ano}`, token);
 }

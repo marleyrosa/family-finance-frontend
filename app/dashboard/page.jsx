@@ -27,6 +27,8 @@ import {
   deletePersonalExpense,
   deletePersonalIncome,
   deletePersonalInvestment,
+  fetchPersonalReportCsv,
+  fetchPersonalReportPdf,
   getCurrentUser,
   getPersonalSummary,
   getSplit,
@@ -37,6 +39,9 @@ import {
   listPersonalInvestments,
   updateExpense,
   updateIncome,
+  updatePersonalExpense,
+  updatePersonalIncome,
+  updatePersonalInvestment,
 } from "../../dashboard/api";
 
 const CATEGORY_OPTIONS = [
@@ -179,6 +184,7 @@ export default function DashboardPage() {
   const [goals, setGoals] = useState({ monthlyGoal: 0, savingsGoal: 0 });
 
   const [editModal, setEditModal] = useState(null);
+  const [personalEditModal, setPersonalEditModal] = useState(null);
   const [deleteModal, setDeleteModal] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState("");
   const [toasts, setToasts] = useState([]);
@@ -192,24 +198,40 @@ export default function DashboardPage() {
     }, 4600);
   };
 
-  const loadDashboard = async (authToken) => {
-    const [meData, expensesData, incomesData, splitData, pIncomes, pExpenses, pInvestments] = await Promise.all([
-      getCurrentUser(authToken),
+  const loadFamilyData = async (authToken) => {
+    const [expensesData, incomesData, splitData] = await Promise.all([
       listExpenses(authToken),
       listIncomes(authToken),
       getSplit(authToken),
+    ]);
+
+    setExpenses(expensesData || []);
+    setIncomes(incomesData || []);
+    setSplit(splitData || { users: [] });
+  };
+
+  const loadPersonalData = async (authToken, monthValue = monthFilter) => {
+    const [summaryData, incomesData, expensesData, investmentsData] = await Promise.all([
+      getPersonalSummary(authToken, Number(monthValue.slice(5, 7)), Number(monthValue.slice(0, 4))),
       listPersonalIncomes(authToken),
       listPersonalExpenses(authToken),
       listPersonalInvestments(authToken),
     ]);
 
-    setUser(meData || null);
-    setExpenses(expensesData || []);
-    setIncomes(incomesData || []);
-    setSplit(splitData || { users: [] });
-    setPersonalIncomes(pIncomes || []);
-    setPersonalExpenses(pExpenses || []);
-    setPersonalInvestments(pInvestments || []);
+    setPersonalSummary(summaryData || { income: 0, expense: 0, investments: 0, balance: 0 });
+    setPersonalIncomes(incomesData || []);
+    setPersonalExpenses(expensesData || []);
+    setPersonalInvestments(investmentsData || []);
+  };
+
+  const refreshFamilyData = async () => {
+    if (!token) return;
+    await loadFamilyData(token);
+  };
+
+  const refreshPersonalData = async () => {
+    if (!token) return;
+    await loadPersonalData(token, monthFilter);
   };
 
   useEffect(() => {
@@ -250,10 +272,30 @@ export default function DashboardPage() {
     }
 
     setToken(savedToken);
+  }, []);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    getCurrentUser(token)
+      .then((meData) => setUser(meData || null))
+      .catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
 
     const run = async () => {
       try {
-        await loadDashboard(savedToken);
+        if (activeTab === "family") {
+          await loadFamilyData(token);
+        } else {
+          await loadPersonalData(token, monthFilter);
+        }
       } catch (err) {
         const message = err.message || "Falha ao carregar dashboard";
         setError(message);
@@ -264,7 +306,17 @@ export default function DashboardPage() {
     };
 
     run();
-  }, []);
+  }, [activeTab, token]);
+
+  useEffect(() => {
+    if (activeTab !== "personal" || !token) {
+      return;
+    }
+
+    loadPersonalData(token, monthFilter).catch(() => {
+      setPersonalSummary({ income: 0, expense: 0, investments: 0, balance: 0 });
+    });
+  }, [monthFilter, activeTab, token]);
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter((item) => {
@@ -592,7 +644,7 @@ export default function DashboardPage() {
         competencia: competenceDateFromMonth(expenseForm.competence || monthFilter),
       });
       setExpenseForm({ category: CATEGORY_OPTIONS[0].api, amount: "", competence: monthFilter });
-      await loadDashboard(token);
+      await refreshFamilyData();
       setShowExpenseForm(false);
     } catch (err) {
       setError(err.message || "Erro ao adicionar despesa");
@@ -612,7 +664,7 @@ export default function DashboardPage() {
         competencia: competenceDateFromMonth(incomeForm.competence || monthFilter),
       });
       setIncomeForm({ amount: "", competence: monthFilter });
-      await loadDashboard(token);
+      await refreshFamilyData();
       setShowIncomeForm(false);
     } catch (err) {
       setError(err.message || "Erro ao adicionar renda");
@@ -716,19 +768,6 @@ export default function DashboardPage() {
       .map(([mes, valor]) => ({ mes, valor }));
   }, [personalInvestments]);
 
-  const loadPersonalSummary = async (authToken, monthValue) => {
-    const [ano, mes] = monthValue.split("-").map(Number);
-    const summary = await getPersonalSummary(authToken, mes, ano);
-    setPersonalSummary(summary || { income: 0, expense: 0, investments: 0, balance: 0 });
-  };
-
-  useEffect(() => {
-    if (!token) return;
-    loadPersonalSummary(token, monthFilter).catch(() => {
-      setPersonalSummary({ income: 0, expense: 0, investments: 0, balance: 0 });
-    });
-  }, [token, monthFilter, personalIncomes, personalExpenses, personalInvestments]);
-
   useEffect(() => {
     if (!notificationEnabled || loading || activeTab !== "personal") {
       return;
@@ -772,7 +811,7 @@ export default function DashboardPage() {
       });
       setPersonalIncomeForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter });
       setShowPersonalIncomeForm(false);
-      await loadDashboard(token);
+      await refreshFamilyData();
     } catch (err) {
       setError(err.message || "Erro ao adicionar receita pessoal");
     }
@@ -792,7 +831,7 @@ export default function DashboardPage() {
       });
       setPersonalExpenseForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter });
       setShowPersonalExpenseForm(false);
-      await loadDashboard(token);
+      await refreshFamilyData();
     } catch (err) {
       setError(err.message || "Erro ao adicionar despesa pessoal");
     }
@@ -812,64 +851,100 @@ export default function DashboardPage() {
       });
       setPersonalInvestmentForm({ description: "", amount: "", investment_type: INVESTMENT_TYPES[0], competence: monthFilter });
       setShowPersonalInvestmentForm(false);
-      await loadDashboard(token);
+      await refreshPersonalData();
     } catch (err) {
       setError(err.message || "Erro ao adicionar investimento pessoal");
     }
   };
 
-  const handleExportPersonalCsv = () => {
-    const rows = ["tipo,descricao,categoria_ou_tipo,valor,competencia"];
-    filteredPersonalIncomes.forEach((row) => {
-      rows.push(`receita,${row.description},${row.category},${row.amount},${row.competencia}`);
+  const openPersonalEditModal = (type, item) => {
+    setPersonalEditModal({
+      type,
+      id: item.id,
+      description: item.description || "",
+      amount: item.amount ?? "",
+      category: item.category || PERSONAL_CATEGORIES[0],
+      investment_type: item.investment_type || INVESTMENT_TYPES[0],
+      competence: monthKeyFromValue(item.competencia || item.created_at),
     });
-    filteredPersonalExpenses.forEach((row) => {
-      rows.push(`despesa,${row.description},${row.category},${row.amount},${row.competencia}`);
-    });
-    filteredPersonalInvestments.forEach((row) => {
-      rows.push(`investimento,${row.description},${row.investment_type},${row.amount},${row.competencia}`);
-    });
-
-    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `relatorio_pessoal_${monthFilter}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
   };
 
-  const handleExportPersonalPdf = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text("FamilYMoney - Relatorio Pessoal", 14, 16);
-    doc.setFontSize(10);
-    doc.text(`Mes de referencia: ${monthFilter}`, 14, 24);
+  const handleSavePersonalEdit = async () => {
+    if (!personalEditModal) {
+      return;
+    }
 
-    autoTable(doc, {
-      startY: 30,
-      head: [["Indicador", "Valor"]],
-      body: [
-        ["Receita Pessoal", brl(personalIncomeTotal)],
-        ["Despesas Pessoais", brl(personalExpenseTotal)],
-        ["Investimentos", brl(personalInvestmentTotal)],
-        ["Saldo Pessoal", brl(personalBalance)],
-      ],
-    });
+    const amount = Number(personalEditModal.amount);
+    if (!personalEditModal.description.trim() || !amount || amount <= 0) {
+      setError("Informe descricao e valor validos");
+      return;
+    }
 
-    autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 8,
-      head: [["Tipo", "Descricao", "Categoria/Tipo", "Valor"]],
-      body: [
-        ...filteredPersonalIncomes.map((row) => ["Receita", row.description, row.category, brl(row.amount)]),
-        ...filteredPersonalExpenses.map((row) => ["Despesa", row.description, row.category, brl(row.amount)]),
-        ...filteredPersonalInvestments.map((row) => ["Investimento", row.description, row.investment_type, brl(row.amount)]),
-      ],
-    });
+    try {
+      setError("");
 
-    doc.save(`relatorio_pessoal_${monthFilter}.pdf`);
+      if (personalEditModal.type === "income") {
+        await updatePersonalIncome(token, personalEditModal.id, {
+          description: personalEditModal.description,
+          amount,
+          category: personalEditModal.category,
+          competencia: competenceDateFromMonth(personalEditModal.competence || monthFilter),
+        });
+      } else if (personalEditModal.type === "expense") {
+        await updatePersonalExpense(token, personalEditModal.id, {
+          description: personalEditModal.description,
+          amount,
+          category: personalEditModal.category,
+          competencia: competenceDateFromMonth(personalEditModal.competence || monthFilter),
+        });
+      } else {
+        await updatePersonalInvestment(token, personalEditModal.id, {
+          description: personalEditModal.description,
+          amount,
+          investment_type: personalEditModal.investment_type,
+          competencia: competenceDateFromMonth(personalEditModal.competence || monthFilter),
+        });
+      }
+
+      setPersonalEditModal(null);
+      await refreshPersonalData();
+    } catch (err) {
+      setError(err.message || "Erro ao editar lancamento pessoal");
+    }
+  };
+
+  const handleExportPersonalCsv = async () => {
+    try {
+      const [year, month] = monthFilter.split("-").map(Number);
+      const blob = await fetchPersonalReportCsv(token, month, year);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `relatorio_pessoal_${monthFilter}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || "Erro ao exportar CSV pessoal");
+    }
+  };
+
+  const handleExportPersonalPdf = async () => {
+    try {
+      const [year, month] = monthFilter.split("-").map(Number);
+      const blob = await fetchPersonalReportPdf(token, month, year);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `relatorio_pessoal_${monthFilter}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message || "Erro ao exportar PDF pessoal");
+    }
   };
 
   const handleExportPdf = () => {
@@ -991,7 +1066,7 @@ export default function DashboardPage() {
       }
 
       setEditModal(null);
-      await loadDashboard(token);
+      await refreshPersonalData();
     } catch (err) {
       const message = err.message || "Erro ao editar lancamento";
       setError(message);
@@ -1020,7 +1095,7 @@ export default function DashboardPage() {
       }
 
       setDeleteModal(null);
-      await loadDashboard(token);
+      await refreshPersonalData();
     } catch (err) {
       const message = err.message || "Erro ao excluir lancamento";
       setError(message);
@@ -1129,7 +1204,10 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Bem-vindo de volta</p>
                   <h1 className="font-display text-2xl font-semibold md:text-3xl">{userDisplayName}</h1>
-                  <p className="text-sm text-slate-300">{user?.email || ""} · {familyMembersCount} membros da familia</p>
+                  <p className="text-sm text-slate-300">
+                    {user?.email || ""}
+                    {activeTab === "family" ? ` · ${familyMembersCount} membros da familia` : " · Visao pessoal"}
+                  </p>
                 </div>
               </div>
 
@@ -1252,6 +1330,7 @@ export default function DashboardPage() {
                 className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white"
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
+                disabled={activeTab === "personal"}
               >
                 <option value="all">Todas as categorias</option>
                 {CATEGORY_OPTIONS.map((category) => (
@@ -1260,12 +1339,31 @@ export default function DashboardPage() {
                   </option>
                 ))}
               </select>
-              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
-                Receitas da familia: <strong className="text-white">{brl(familyTotalIncome)}</strong>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
-                Saldo Familiar: <strong className="text-white">{brl(familyBalance)}</strong>
-              </div>
+              {activeTab === "family" ? (
+                <>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
+                    Receitas da familia: <strong className="text-white">{brl(familyTotalIncome)}</strong>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
+                    Saldo Familiar: <strong className="text-white">{brl(familyBalance)}</strong>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
+                    Receita Pessoal: <strong className="text-white">{brl(personalSummary.income)}</strong>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
+                    Despesa Pessoal: <strong className="text-white">{brl(personalSummary.expense)}</strong>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
+                    Investimentos: <strong className="text-white">{brl(personalSummary.investments)}</strong>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
+                    Saldo Pessoal: <strong className="text-white">{brl(personalSummary.balance)}</strong>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -1692,10 +1790,10 @@ export default function DashboardPage() {
               >
                 <motion.section variants={itemVariants} id="personal-overview" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {[
-                    { title: "Receita Pessoal", value: brl(personalIncomeTotal), tone: "from-sky-500/25 to-sky-300/5" },
-                    { title: "Despesas Pessoais", value: brl(personalExpenseTotal), tone: "from-fuchsia-500/25 to-fuchsia-300/5" },
-                    { title: "Investimentos", value: brl(personalInvestmentTotal), tone: "from-violet-500/25 to-violet-300/5" },
-                    { title: "Saldo Pessoal", value: brl(personalBalance), tone: "from-emerald-500/25 to-emerald-300/5" },
+                    { title: "Receita Pessoal", value: brl(personalSummary.income), tone: "from-sky-500/25 to-sky-300/5" },
+                    { title: "Despesas Pessoais", value: brl(personalSummary.expense), tone: "from-fuchsia-500/25 to-fuchsia-300/5" },
+                    { title: "Investimentos", value: brl(personalSummary.investments), tone: "from-violet-500/25 to-violet-300/5" },
+                    { title: "Saldo Pessoal", value: brl(personalSummary.balance), tone: "from-emerald-500/25 to-emerald-300/5" },
                   ].map((card) => (
                     <motion.div
                       key={card.title}
@@ -1883,7 +1981,15 @@ export default function DashboardPage() {
                         {filteredPersonalIncomes.map((row) => (
                           <div key={`pi-${row.id}`} className="flex items-center justify-between rounded-lg bg-white/5 px-2 py-1">
                             <span>{row.description}</span>
-                            <span className="text-emerald-300">{brl(row.amount)}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-emerald-300">{brl(row.amount)}</span>
+                              <button className="rounded bg-sky-600 px-1 py-0.5 text-xs" onClick={() => openPersonalEditModal("income", row)}>
+                                Editar
+                              </button>
+                              <button className="rounded bg-rose-600 px-1 py-0.5 text-xs" onClick={() => deletePersonalIncome(token, row.id).then(() => refreshPersonalData())}>
+                                Del
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1896,7 +2002,10 @@ export default function DashboardPage() {
                             <span>{row.description}</span>
                             <div className="flex items-center gap-2">
                               <span className="text-rose-300">{brl(row.amount)}</span>
-                              <button className="rounded bg-rose-600 px-1 py-0.5 text-xs" onClick={() => deletePersonalExpense(token, row.id).then(() => loadDashboard(token))}>
+                              <button className="rounded bg-sky-600 px-1 py-0.5 text-xs" onClick={() => openPersonalEditModal("expense", row)}>
+                                Editar
+                              </button>
+                              <button className="rounded bg-rose-600 px-1 py-0.5 text-xs" onClick={() => deletePersonalExpense(token, row.id).then(() => refreshPersonalData())}>
                                 Del
                               </button>
                             </div>
@@ -1912,9 +2021,12 @@ export default function DashboardPage() {
                             <span>{row.description}</span>
                             <div className="flex items-center gap-2">
                               <span className="text-violet-300">{brl(row.amount)}</span>
+                              <button className="rounded bg-sky-600 px-1 py-0.5 text-xs" onClick={() => openPersonalEditModal("investment", row)}>
+                                Editar
+                              </button>
                               <button
                                 className="rounded bg-rose-600 px-1 py-0.5 text-xs"
-                                onClick={() => deletePersonalInvestment(token, row.id).then(() => loadDashboard(token))}
+                                onClick={() => deletePersonalInvestment(token, row.id).then(() => refreshPersonalData())}
                               >
                                 Del
                               </button>
@@ -1992,6 +2104,90 @@ export default function DashboardPage() {
                       Cancelar
                     </button>
                     <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold" onClick={handleSaveEdit}>
+                      Salvar
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {personalEditModal ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-3"
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 24, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 24, scale: 0.96 }}
+                  className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-950 p-4"
+                >
+                  <h4 className="text-lg font-semibold text-white">
+                    {personalEditModal.type === "income" ? "Editar Receita Pessoal" : personalEditModal.type === "expense" ? "Editar Despesa Pessoal" : "Editar Investimento Pessoal"}
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-400">Atualize o lançamento pessoal e salve para recalcular o resumo, os gráficos e o extrato.</p>
+
+                  <div className="mt-4 space-y-3">
+                    <input
+                      type="text"
+                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                      value={personalEditModal.description}
+                      placeholder="Descricao"
+                      onChange={(e) => setPersonalEditModal((prev) => ({ ...prev, description: e.target.value }))}
+                    />
+
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                      value={personalEditModal.amount}
+                      placeholder="Valor"
+                      onChange={(e) => setPersonalEditModal((prev) => ({ ...prev, amount: e.target.value }))}
+                    />
+
+                    {personalEditModal.type !== "investment" ? (
+                      <select
+                        className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                        value={personalEditModal.category}
+                        onChange={(e) => setPersonalEditModal((prev) => ({ ...prev, category: e.target.value }))}
+                      >
+                        {PERSONAL_CATEGORIES.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <select
+                        className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                        value={personalEditModal.investment_type}
+                        onChange={(e) => setPersonalEditModal((prev) => ({ ...prev, investment_type: e.target.value }))}
+                      >
+                        {INVESTMENT_TYPES.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    <input
+                      type="month"
+                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                      value={personalEditModal.competence}
+                      onChange={(e) => setPersonalEditModal((prev) => ({ ...prev, competence: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button className="rounded-xl bg-slate-700 px-3 py-2 text-sm" onClick={() => setPersonalEditModal(null)}>
+                      Cancelar
+                    </button>
+                    <button className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold" onClick={handleSavePersonalEdit}>
                       Salvar
                     </button>
                   </div>
