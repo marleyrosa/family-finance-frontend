@@ -96,6 +96,12 @@ const currentMonth = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 };
 
+const monthKeyFromValue = (value) => String(value || "").slice(0, 7);
+
+const monthValueFromDate = (value) => monthKeyFromValue(value) || currentMonth();
+
+const competenceDateFromMonth = (value) => `${monthKeyFromValue(value)}-01`;
+
 const brl = (value) =>
   Number(value || 0).toLocaleString("pt-BR", {
     style: "currency",
@@ -121,8 +127,8 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [notificationEnabled, setNotificationEnabled] = useState(false);
 
-  const [expenseForm, setExpenseForm] = useState({ category: CATEGORY_OPTIONS[0].api, amount: "" });
-  const [incomeForm, setIncomeForm] = useState({ amount: "" });
+  const [expenseForm, setExpenseForm] = useState({ category: CATEGORY_OPTIONS[0].api, amount: "", competence: currentMonth() });
+  const [incomeForm, setIncomeForm] = useState({ amount: "", competence: currentMonth() });
   const [goals, setGoals] = useState({ monthlyGoal: 0, savingsGoal: 0 });
 
   const [editModal, setEditModal] = useState(null);
@@ -176,6 +182,11 @@ export default function DashboardPage() {
   }, [goals]);
 
   useEffect(() => {
+    setExpenseForm((prev) => ({ ...prev, competence: monthFilter }));
+    setIncomeForm((prev) => ({ ...prev, competence: monthFilter }));
+  }, [monthFilter]);
+
+  useEffect(() => {
     const savedToken = localStorage.getItem("token") || "";
     if (!savedToken) {
       window.location.href = "/";
@@ -200,11 +211,8 @@ export default function DashboardPage() {
   }, []);
 
   const filteredExpenses = useMemo(() => {
-    const [year, month] = monthFilter.split("-").map(Number);
     return expenses.filter((item) => {
-      const d = new Date(item.created_at);
-      const sameMonth = d.getFullYear() === year && d.getMonth() + 1 === month;
-      if (!sameMonth) return false;
+      if (monthKeyFromValue(item.competencia || item.created_at) !== monthFilter) return false;
       if (categoryFilter === "all") return true;
       const selected = CATEGORY_OPTIONS.find((c) => c.key === categoryFilter);
       return item.category === selected?.api;
@@ -212,11 +220,7 @@ export default function DashboardPage() {
   }, [expenses, monthFilter, categoryFilter]);
 
   const filteredIncomes = useMemo(() => {
-    const [year, month] = monthFilter.split("-").map(Number);
-    return incomes.filter((item) => {
-      const d = new Date(item.created_at);
-      return d.getFullYear() === year && d.getMonth() + 1 === month;
-    });
+    return incomes.filter((item) => monthKeyFromValue(item.competencia || item.created_at) === monthFilter);
   }, [incomes, monthFilter]);
 
   const monthlyIncome = useMemo(
@@ -270,7 +274,7 @@ export default function DashboardPage() {
   );
 
   const totalExpenseChart = [
-    { name: "Mes atual", income: monthlyIncome, expenses: monthlyExpense },
+    { name: "Mes selecionado", income: monthlyIncome, expenses: monthlyExpense },
     { name: "Total familiar", income: familyTotalIncome, expenses: familyTotalExpense },
   ];
 
@@ -285,7 +289,7 @@ export default function DashboardPage() {
         owner: item.user_email,
         category: API_CATEGORY_TO_LABEL[item.category] || item.category,
         amount: Number(item.amount || 0),
-        created_at: item.created_at,
+        competence: item.competencia || item.created_at,
       })),
       ...filteredIncomes.map((item) => ({
         id: `income-${item.id}`,
@@ -293,11 +297,11 @@ export default function DashboardPage() {
         owner: item.user_email,
         category: "Receitas",
         amount: Number(item.amount || 0),
-        created_at: item.created_at,
+        competence: item.competencia || item.created_at,
       })),
     ];
 
-    return items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 10);
+    return items.sort((a, b) => new Date(b.competence).getTime() - new Date(a.competence).getTime()).slice(0, 10);
   }, [filteredExpenses, filteredIncomes]);
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -529,8 +533,9 @@ export default function DashboardPage() {
       await createExpense(token, {
         category: expenseForm.category,
         amount: Number(expenseForm.amount),
+        competencia: competenceDateFromMonth(expenseForm.competence || monthFilter),
       });
-      setExpenseForm({ category: CATEGORY_OPTIONS[0].api, amount: "" });
+      setExpenseForm({ category: CATEGORY_OPTIONS[0].api, amount: "", competence: monthFilter });
       await loadDashboard(token);
       setShowExpenseForm(false);
     } catch (err) {
@@ -546,8 +551,11 @@ export default function DashboardPage() {
 
     try {
       setError("");
-      await createIncome(token, { amount: Number(incomeForm.amount) });
-      setIncomeForm({ amount: "" });
+      await createIncome(token, {
+        amount: Number(incomeForm.amount),
+        competencia: competenceDateFromMonth(incomeForm.competence || monthFilter),
+      });
+      setIncomeForm({ amount: "", competence: monthFilter });
       await loadDashboard(token);
       setShowIncomeForm(false);
     } catch (err) {
@@ -556,9 +564,9 @@ export default function DashboardPage() {
   };
 
   const handleExportExcel = () => {
-    const rows = ["type,owner,category,amount,created_at"];
+    const rows = ["type,owner,category,amount,competencia"];
     for (const tx of recentTransactions) {
-      rows.push(`${tx.type},${tx.owner},${tx.category},${tx.amount},${tx.created_at}`);
+      rows.push(`${tx.type},${tx.owner},${tx.category},${tx.amount},${tx.competence}`);
     }
 
     const csv = rows.join("\n");
@@ -583,12 +591,10 @@ export default function DashboardPage() {
   const previousMonthMetrics = useMemo(() => {
     const [year, month] = previousMonthFilter.split("-").map(Number);
     const prevExpenses = expenses.filter((item) => {
-      const d = new Date(item.created_at);
-      return d.getFullYear() === year && d.getMonth() + 1 === month;
+      return monthKeyFromValue(item.competencia || item.created_at) === previousMonthFilter;
     });
     const prevIncomes = incomes.filter((item) => {
-      const d = new Date(item.created_at);
-      return d.getFullYear() === year && d.getMonth() + 1 === month;
+      return monthKeyFromValue(item.competencia || item.created_at) === previousMonthFilter;
     });
 
     const prevExpenseTotal = prevExpenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
@@ -627,7 +633,7 @@ export default function DashboardPage() {
 
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 8,
-      head: [["Resumo", "Mes atual", "Mes anterior"]],
+      head: [["Resumo", "Mes selecionado", "Mes anterior"]],
       body: [
         ["Receitas", brl(monthlyIncome), brl(previousMonthMetrics.income)],
         ["Despesas", brl(monthlyExpense), brl(previousMonthMetrics.expense)],
@@ -669,6 +675,7 @@ export default function DashboardPage() {
       id: expense.id,
       category: expense.category,
       amount: String(expense.amount),
+      competence: monthValueFromDate(expense.competencia || expense.created_at),
     });
   };
 
@@ -677,6 +684,7 @@ export default function DashboardPage() {
       type: "income",
       id: income.id,
       amount: String(income.amount),
+      competence: monthValueFromDate(income.competencia || income.created_at),
     });
   };
 
@@ -705,10 +713,14 @@ export default function DashboardPage() {
         await updateExpense(token, editModal.id, {
           category: editModal.category,
           amount,
+          competencia: competenceDateFromMonth(editModal.competence || monthFilter),
         });
         pushToast("success", "Despesa atualizada", "Lancamento atualizado com sucesso.");
       } else {
-        await updateIncome(token, editModal.id, { amount });
+        await updateIncome(token, editModal.id, {
+          amount,
+          competencia: competenceDateFromMonth(editModal.competence || monthFilter),
+        });
         pushToast("success", "Receita atualizada", "Lancamento atualizado com sucesso.");
       }
 
@@ -989,9 +1001,9 @@ export default function DashboardPage() {
           {showExpenseForm ? (
             <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
               <h3 className="mb-3 text-lg font-semibold">Nova Despesa</h3>
-              <div className="grid gap-2 md:grid-cols-3">
+              <div className="grid gap-2 md:grid-cols-4">
                 <select
-                  className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                  className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 md:col-span-1"
                   value={expenseForm.category}
                   onChange={(e) => setExpenseForm((prev) => ({ ...prev, category: e.target.value }))}
                 >
@@ -1004,12 +1016,18 @@ export default function DashboardPage() {
                 <input
                   type="number"
                   step="0.01"
-                  className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                  className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 md:col-span-1"
                   placeholder="Valor da despesa"
                   value={expenseForm.amount}
                   onChange={(e) => setExpenseForm((prev) => ({ ...prev, amount: e.target.value }))}
                 />
-                <button className="rounded-xl bg-fuchsia-600 px-3 py-2 font-medium text-white" onClick={handleAddExpense}>
+                <input
+                  type="month"
+                  className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 md:col-span-1"
+                  value={expenseForm.competence}
+                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, competence: e.target.value }))}
+                />
+                <button className="rounded-xl bg-fuchsia-600 px-3 py-2 font-medium text-white md:col-span-1" onClick={handleAddExpense}>
                   Salvar Despesa
                 </button>
               </div>
@@ -1026,7 +1044,13 @@ export default function DashboardPage() {
                   className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
                   placeholder="Valor da receita"
                   value={incomeForm.amount}
-                  onChange={(e) => setIncomeForm({ amount: e.target.value })}
+                  onChange={(e) => setIncomeForm((prev) => ({ ...prev, amount: e.target.value }))}
+                />
+                <input
+                  type="month"
+                  className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
+                  value={incomeForm.competence}
+                  onChange={(e) => setIncomeForm((prev) => ({ ...prev, competence: e.target.value }))}
                 />
                 <button className="rounded-xl bg-sky-600 px-3 py-2 font-medium text-white" onClick={handleAddIncome}>
                   Salvar Receita
@@ -1076,7 +1100,7 @@ export default function DashboardPage() {
                     <th className="p-2">Responsavel</th>
                     <th className="p-2">Categoria</th>
                     <th className="p-2">Valor</th>
-                    <th className="p-2">Data</th>
+                    <th className="p-2">Competencia</th>
                     <th className="p-2">Acoes</th>
                   </tr>
                 </thead>
@@ -1094,7 +1118,7 @@ export default function DashboardPage() {
                           {API_CATEGORY_TO_LABEL[expense.category] || expense.category}
                         </td>
                         <td className="p-2">{brl(expense.amount)}</td>
-                        <td className="p-2">{new Date(expense.created_at).toLocaleDateString("pt-BR")}</td>
+                        <td className="p-2">{new Date(expense.competencia || expense.created_at).toLocaleDateString("pt-BR")}</td>
                         <td className="p-2">
                           {isMine ? (
                             <div className="flex flex-wrap gap-1">
@@ -1125,7 +1149,7 @@ export default function DashboardPage() {
                   <tr>
                     <th className="p-2">Responsavel</th>
                     <th className="p-2">Valor</th>
-                    <th className="p-2">Data</th>
+                    <th className="p-2">Competencia</th>
                     <th className="p-2">Acoes</th>
                   </tr>
                 </thead>
@@ -1140,7 +1164,7 @@ export default function DashboardPage() {
                           </span>
                         </td>
                         <td className="p-2">{brl(income.amount)}</td>
-                        <td className="p-2">{new Date(income.created_at).toLocaleDateString("pt-BR")}</td>
+                        <td className="p-2">{new Date(income.competencia || income.created_at).toLocaleDateString("pt-BR")}</td>
                         <td className="p-2">
                           {isMine ? (
                             <div className="flex flex-wrap gap-1">
@@ -1246,7 +1270,7 @@ export default function DashboardPage() {
             <h3 className="mb-3 text-lg font-semibold">Relatorios mensais</h3>
             <div className="grid gap-3 md:grid-cols-4">
               <article className="rounded-xl border border-white/10 bg-white/5 p-3">
-                <p className="text-xs text-slate-400">Mes atual ({monthFilter})</p>
+                <p className="text-xs text-slate-400">Mes selecionado ({monthFilter})</p>
                 <p className="mt-1 text-sm text-slate-200">Receitas: {brl(monthlyIncome)}</p>
                 <p className="text-sm text-slate-200">Despesas: {brl(monthlyExpense)}</p>
               </article>
@@ -1296,7 +1320,7 @@ export default function DashboardPage() {
                         <span className="rounded-full bg-slate-800/80 px-2 py-0.5 text-[11px] text-slate-200">
                           {ownerLabel(tx.owner)}
                         </span>
-                        <p className="text-xs text-slate-400">{new Date(tx.created_at).toLocaleString("pt-BR")}</p>
+                        <p className="text-xs text-slate-400">{new Date(tx.competence).toLocaleString("pt-BR")}</p>
                       </div>
                     </div>
                     <p className={`text-sm font-semibold ${tx.type === "expense" ? "text-rose-300" : "text-emerald-300"}`}>
@@ -1373,6 +1397,13 @@ export default function DashboardPage() {
                       value={editModal.amount}
                       placeholder={editModal.type === "expense" ? "Valor da despesa" : "Valor da receita"}
                       onChange={(e) => setEditModal((prev) => ({ ...prev, amount: e.target.value }))}
+                    />
+
+                    <input
+                      type="month"
+                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                      value={editModal.competence}
+                      onChange={(e) => setEditModal((prev) => ({ ...prev, competence: e.target.value }))}
                     />
                   </div>
 
