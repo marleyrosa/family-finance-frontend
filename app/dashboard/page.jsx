@@ -234,6 +234,42 @@ export default function DashboardPage() {
     await loadPersonalData(token, monthFilter);
   };
 
+  const calculatePersonalSummaryFromLists = (incomeList, expenseList, investmentList, monthValue = monthFilter) => {
+    const incomeTotal = incomeList
+      .filter((item) => monthKeyFromValue(item.competencia || item.created_at) === monthValue)
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const expenseTotal = expenseList
+      .filter((item) => monthKeyFromValue(item.competencia || item.created_at) === monthValue)
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const investmentTotal = investmentList
+      .filter((item) => monthKeyFromValue(item.competencia || item.created_at) === monthValue)
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+
+    return {
+      income: incomeTotal,
+      expense: expenseTotal,
+      investments: investmentTotal,
+      balance: incomeTotal - expenseTotal - investmentTotal,
+    };
+  };
+
+  const syncPersonalState = (type, nextItems) => {
+    if (type === "income") {
+      setPersonalIncomes(nextItems);
+      setPersonalSummary(calculatePersonalSummaryFromLists(nextItems, personalExpenses, personalInvestments));
+      return;
+    }
+
+    if (type === "expense") {
+      setPersonalExpenses(nextItems);
+      setPersonalSummary(calculatePersonalSummaryFromLists(personalIncomes, nextItems, personalInvestments));
+      return;
+    }
+
+    setPersonalInvestments(nextItems);
+    setPersonalSummary(calculatePersonalSummaryFromLists(personalIncomes, personalExpenses, nextItems));
+  };
+
   useEffect(() => {
     const stored = localStorage.getItem("finance_goals");
     const storedAvatar = localStorage.getItem("familymoney_avatar_url") || "";
@@ -720,15 +756,22 @@ export default function DashboardPage() {
     [personalIncomes, monthFilter]
   );
 
+  const personalIncomeList = personalIncomes;
+
   const filteredPersonalExpenses = useMemo(
     () => personalExpenses.filter((item) => monthKeyFromValue(item.competencia || item.created_at) === monthFilter),
     [personalExpenses, monthFilter]
   );
 
+  const personalExpenseList = personalExpenses;
+
   const filteredPersonalInvestments = useMemo(
     () => personalInvestments.filter((item) => monthKeyFromValue(item.competencia || item.created_at) === monthFilter),
     [personalInvestments, monthFilter]
   );
+
+  const personalInvestmentList = personalInvestments;
+  const hasPersonalData = personalIncomeList.length > 0 || personalExpenseList.length > 0 || personalInvestmentList.length > 0;
 
   const personalIncomeTotal = useMemo(
     () => filteredPersonalIncomes.reduce((sum, row) => sum + Number(row.amount || 0), 0),
@@ -750,11 +793,19 @@ export default function DashboardPage() {
       const key = row.category || "Outros";
       map.set(key, (map.get(key) || 0) + Number(row.amount || 0));
     }
-    return Array.from(map.entries()).map(([category, amount]) => ({ category, amount }));
-  }, [filteredPersonalExpenses]);
+    const dataset = Array.from(map.entries()).map(([category, amount]) => ({ category, amount }));
+    return dataset.length ? dataset : hasPersonalData ? [{ category: "Sem despesas", amount: 1 }] : [{ category: "Sem despesas", amount: 0 }];
+  }, [filteredPersonalExpenses, hasPersonalData]);
 
   const personalIncomeVsExpense = useMemo(
-    () => [{ name: "Pessoal", receitas: personalIncomeTotal, despesas: personalExpenseTotal, investimentos: personalInvestmentTotal }],
+    () => [
+      {
+        name: monthFilter,
+        receitas: personalIncomeTotal,
+        despesas: personalExpenseTotal,
+        investimentos: personalInvestmentTotal,
+      },
+    ],
     [personalIncomeTotal, personalExpenseTotal, personalInvestmentTotal]
   );
 
@@ -767,7 +818,13 @@ export default function DashboardPage() {
     return Array.from(map.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([mes, valor]) => ({ mes, valor }));
-  }, [personalInvestments]);
+  }, [personalInvestments, monthFilter]);
+
+  const personalInvestmentsEvolutionChart = useMemo(() => {
+    return personalInvestmentsEvolution.length
+      ? personalInvestmentsEvolution
+      : [{ mes: monthFilter, valor: 0 }];
+  }, [personalInvestmentsEvolution, monthFilter]);
 
   useEffect(() => {
     if (!notificationEnabled || loading || activeTab !== "personal") {
@@ -812,7 +869,7 @@ export default function DashboardPage() {
       });
       setPersonalIncomeForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter });
       setShowPersonalIncomeForm(false);
-      await refreshFamilyData();
+      await refreshPersonalData();
     } catch (err) {
       setError(err.message || "Erro ao adicionar receita pessoal");
     }
@@ -832,7 +889,7 @@ export default function DashboardPage() {
       });
       setPersonalExpenseForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter });
       setShowPersonalExpenseForm(false);
-      await refreshFamilyData();
+      await refreshPersonalData();
     } catch (err) {
       setError(err.message || "Erro ao adicionar despesa pessoal");
     }
@@ -885,26 +942,44 @@ export default function DashboardPage() {
       setError("");
 
       if (personalEditModal.type === "income") {
-        await updatePersonalIncome(token, personalEditModal.id, {
+        const updatedItem = {
+          ...personalIncomes.find((item) => item.id === personalEditModal.id),
           description: personalEditModal.description,
           amount,
           category: personalEditModal.category,
           competencia: competenceDateFromMonth(personalEditModal.competence || monthFilter),
-        });
+        };
+        await updatePersonalIncome(token, personalEditModal.id, updatedItem);
+        syncPersonalState(
+          "income",
+          personalIncomes.map((item) => (item.id === personalEditModal.id ? { ...item, ...updatedItem } : item))
+        );
       } else if (personalEditModal.type === "expense") {
-        await updatePersonalExpense(token, personalEditModal.id, {
+        const updatedItem = {
+          ...personalExpenses.find((item) => item.id === personalEditModal.id),
           description: personalEditModal.description,
           amount,
           category: personalEditModal.category,
           competencia: competenceDateFromMonth(personalEditModal.competence || monthFilter),
-        });
+        };
+        await updatePersonalExpense(token, personalEditModal.id, updatedItem);
+        syncPersonalState(
+          "expense",
+          personalExpenses.map((item) => (item.id === personalEditModal.id ? { ...item, ...updatedItem } : item))
+        );
       } else {
-        await updatePersonalInvestment(token, personalEditModal.id, {
+        const updatedItem = {
+          ...personalInvestments.find((item) => item.id === personalEditModal.id),
           description: personalEditModal.description,
           amount,
           investment_type: personalEditModal.investment_type,
           competencia: competenceDateFromMonth(personalEditModal.competence || monthFilter),
-        });
+        };
+        await updatePersonalInvestment(token, personalEditModal.id, updatedItem);
+        syncPersonalState(
+          "investment",
+          personalInvestments.map((item) => (item.id === personalEditModal.id ? { ...item, ...updatedItem } : item))
+        );
       }
 
       setPersonalEditModal(null);
@@ -1812,8 +1887,8 @@ export default function DashboardPage() {
                   <article className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-base font-semibold">Lista de Receitas Pessoais</h3>
                     <div className="space-y-2 text-sm text-slate-300">
-                      {filteredPersonalIncomes.length ? (
-                        filteredPersonalIncomes.map((row) => (
+                      {personalIncomeList.length ? (
+                        personalIncomeList.map((row) => (
                           <div key={`personal-income-${row.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div>
@@ -1823,10 +1898,21 @@ export default function DashboardPage() {
                               <p className="text-emerald-300">{brl(row.amount)}</p>
                             </div>
                             <div className="mt-2 flex gap-2">
-                              <button className="rounded bg-sky-600 px-2 py-1 text-xs" onClick={() => openPersonalEditModal("income", row)}>
+                              <button type="button" className="rounded bg-sky-600 px-2 py-1 text-xs" onClick={() => openPersonalEditModal("income", row)}>
                                 Editar
                               </button>
-                              <button className="rounded bg-rose-600 px-2 py-1 text-xs" onClick={() => deletePersonalIncome(token, row.id).then(() => refreshPersonalData())}>
+                              <button
+                                type="button"
+                                className="rounded bg-rose-600 px-2 py-1 text-xs"
+                                onClick={async () => {
+                                  await deletePersonalIncome(token, row.id);
+                                  syncPersonalState(
+                                    "income",
+                                    personalIncomes.filter((item) => item.id !== row.id)
+                                  );
+                                  await refreshPersonalData();
+                                }}
+                              >
                                 Excluir
                               </button>
                             </div>
@@ -1841,8 +1927,8 @@ export default function DashboardPage() {
                   <article className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-base font-semibold">Lista de Despesas Pessoais</h3>
                     <div className="space-y-2 text-sm text-slate-300">
-                      {filteredPersonalExpenses.length ? (
-                        filteredPersonalExpenses.map((row) => (
+                      {personalExpenseList.length ? (
+                        personalExpenseList.map((row) => (
                           <div key={`personal-expense-${row.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div>
@@ -1852,10 +1938,21 @@ export default function DashboardPage() {
                               <p className="text-rose-300">{brl(row.amount)}</p>
                             </div>
                             <div className="mt-2 flex gap-2">
-                              <button className="rounded bg-sky-600 px-2 py-1 text-xs" onClick={() => openPersonalEditModal("expense", row)}>
+                              <button type="button" className="rounded bg-sky-600 px-2 py-1 text-xs" onClick={() => openPersonalEditModal("expense", row)}>
                                 Editar
                               </button>
-                              <button className="rounded bg-rose-600 px-2 py-1 text-xs" onClick={() => deletePersonalExpense(token, row.id).then(() => refreshPersonalData())}>
+                              <button
+                                type="button"
+                                className="rounded bg-rose-600 px-2 py-1 text-xs"
+                                onClick={async () => {
+                                  await deletePersonalExpense(token, row.id);
+                                  syncPersonalState(
+                                    "expense",
+                                    personalExpenses.filter((item) => item.id !== row.id)
+                                  );
+                                  await refreshPersonalData();
+                                }}
+                              >
                                 Excluir
                               </button>
                             </div>
@@ -1870,8 +1967,8 @@ export default function DashboardPage() {
                   <article className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-base font-semibold">Lista de Investimentos Pessoais</h3>
                     <div className="space-y-2 text-sm text-slate-300">
-                      {filteredPersonalInvestments.length ? (
-                        filteredPersonalInvestments.map((row) => (
+                      {personalInvestmentList.length ? (
+                        personalInvestmentList.map((row) => (
                           <div key={`personal-investment-${row.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div>
@@ -1881,10 +1978,21 @@ export default function DashboardPage() {
                               <p className="text-violet-300">{brl(row.amount)}</p>
                             </div>
                             <div className="mt-2 flex gap-2">
-                              <button className="rounded bg-sky-600 px-2 py-1 text-xs" onClick={() => openPersonalEditModal("investment", row)}>
+                              <button type="button" className="rounded bg-sky-600 px-2 py-1 text-xs" onClick={() => openPersonalEditModal("investment", row)}>
                                 Editar
                               </button>
-                              <button className="rounded bg-rose-600 px-2 py-1 text-xs" onClick={() => deletePersonalInvestment(token, row.id).then(() => refreshPersonalData())}>
+                              <button
+                                type="button"
+                                className="rounded bg-rose-600 px-2 py-1 text-xs"
+                                onClick={async () => {
+                                  await deletePersonalInvestment(token, row.id);
+                                  syncPersonalState(
+                                    "investment",
+                                    personalInvestments.filter((item) => item.id !== row.id)
+                                  );
+                                  await refreshPersonalData();
+                                }}
+                              >
                                 Excluir
                               </button>
                             </div>
@@ -2017,14 +2125,14 @@ export default function DashboardPage() {
                     <h3 className="mb-3 text-base font-semibold">Receita x Despesa Pessoal</h3>
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={personalIncomeVsExpense}>
+                        <BarChart key={`personal-income-vs-expense-${monthFilter}-${personalIncomeTotal}-${personalExpenseTotal}-${personalInvestmentTotal}`} data={personalIncomeVsExpense}>
                           <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
                           <XAxis dataKey="name" stroke="#cbd5e1" />
                           <YAxis stroke="#cbd5e1" />
                           <Tooltip />
-                          <Bar dataKey="receitas" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
-                          <Bar dataKey="despesas" fill="#e11d48" radius={[8, 8, 0, 0]} />
-                          <Bar dataKey="investimentos" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
+                          <Bar dataKey="receitas" fill="#0ea5e9" radius={[8, 8, 0, 0]} minPointSize={4} />
+                          <Bar dataKey="despesas" fill="#e11d48" radius={[8, 8, 0, 0]} minPointSize={4} />
+                          <Bar dataKey="investimentos" fill="#8b5cf6" radius={[8, 8, 0, 0]} minPointSize={4} />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -2034,9 +2142,9 @@ export default function DashboardPage() {
                     <h3 className="mb-3 text-base font-semibold">Despesas pessoais por categoria</h3>
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
+                          <PieChart key={`personal-expenses-${monthFilter}-${filteredPersonalExpenses.length}-${personalExpenseTotal}`}>
                           <Tooltip />
-                          <Pie data={personalExpensesByCategory} dataKey="amount" nameKey="category" outerRadius={88} innerRadius={48}>
+                          <Pie data={personalExpensesByCategory} dataKey="amount" nameKey="category" outerRadius={88} innerRadius={48} minAngle={6}>
                             {personalExpensesByCategory.map((entry, index) => (
                               <Cell key={entry.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                             ))}
@@ -2050,12 +2158,12 @@ export default function DashboardPage() {
                     <h3 className="mb-3 text-base font-semibold">Evolucao dos investimentos</h3>
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={personalInvestmentsEvolution}>
+                        <BarChart key={`personal-investments-${monthFilter}-${personalInvestmentsEvolutionChart.length}-${personalInvestmentTotal}`} data={personalInvestmentsEvolutionChart}>
                           <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
                           <XAxis dataKey="mes" stroke="#cbd5e1" />
                           <YAxis stroke="#cbd5e1" />
                           <Tooltip />
-                          <Bar dataKey="valor" fill="#8b5cf6" radius={[8, 8, 0, 0]} />
+                          <Bar dataKey="valor" fill="#8b5cf6" radius={[8, 8, 0, 0]} minPointSize={4} />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -2073,10 +2181,21 @@ export default function DashboardPage() {
                             <span>{row.description}</span>
                             <div className="flex items-center gap-2">
                               <span className="text-emerald-300">{brl(row.amount)}</span>
-                              <button className="rounded bg-sky-600 px-1 py-0.5 text-xs" onClick={() => openPersonalEditModal("income", row)}>
+                              <button type="button" className="rounded bg-sky-600 px-1 py-0.5 text-xs" onClick={() => openPersonalEditModal("income", row)}>
                                 Editar
                               </button>
-                              <button className="rounded bg-rose-600 px-1 py-0.5 text-xs" onClick={() => deletePersonalIncome(token, row.id).then(() => refreshPersonalData())}>
+                              <button
+                                type="button"
+                                className="rounded bg-rose-600 px-1 py-0.5 text-xs"
+                                onClick={async () => {
+                                  await deletePersonalIncome(token, row.id);
+                                  syncPersonalState(
+                                    "income",
+                                    personalIncomes.filter((item) => item.id !== row.id)
+                                  );
+                                  await refreshPersonalData();
+                                }}
+                              >
                                 Del
                               </button>
                             </div>
@@ -2092,10 +2211,21 @@ export default function DashboardPage() {
                             <span>{row.description}</span>
                             <div className="flex items-center gap-2">
                               <span className="text-rose-300">{brl(row.amount)}</span>
-                              <button className="rounded bg-sky-600 px-1 py-0.5 text-xs" onClick={() => openPersonalEditModal("expense", row)}>
+                              <button type="button" className="rounded bg-sky-600 px-1 py-0.5 text-xs" onClick={() => openPersonalEditModal("expense", row)}>
                                 Editar
                               </button>
-                              <button className="rounded bg-rose-600 px-1 py-0.5 text-xs" onClick={() => deletePersonalExpense(token, row.id).then(() => refreshPersonalData())}>
+                              <button
+                                type="button"
+                                className="rounded bg-rose-600 px-1 py-0.5 text-xs"
+                                onClick={async () => {
+                                  await deletePersonalExpense(token, row.id);
+                                  syncPersonalState(
+                                    "expense",
+                                    personalExpenses.filter((item) => item.id !== row.id)
+                                  );
+                                  await refreshPersonalData();
+                                }}
+                              >
                                 Del
                               </button>
                             </div>
@@ -2111,12 +2241,20 @@ export default function DashboardPage() {
                             <span>{row.description}</span>
                             <div className="flex items-center gap-2">
                               <span className="text-violet-300">{brl(row.amount)}</span>
-                              <button className="rounded bg-sky-600 px-1 py-0.5 text-xs" onClick={() => openPersonalEditModal("investment", row)}>
+                              <button type="button" className="rounded bg-sky-600 px-1 py-0.5 text-xs" onClick={() => openPersonalEditModal("investment", row)}>
                                 Editar
                               </button>
                               <button
+                                type="button"
                                 className="rounded bg-rose-600 px-1 py-0.5 text-xs"
-                                onClick={() => deletePersonalInvestment(token, row.id).then(() => refreshPersonalData())}
+                                onClick={async () => {
+                                  await deletePersonalInvestment(token, row.id);
+                                  syncPersonalState(
+                                    "investment",
+                                    personalInvestments.filter((item) => item.id !== row.id)
+                                  );
+                                  await refreshPersonalData();
+                                }}
                               >
                                 Del
                               </button>
