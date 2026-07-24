@@ -134,6 +134,35 @@ const brl = (value) =>
     currency: "BRL",
   });
 
+const formatCompetenceDate = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "-";
+  }
+
+  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    return `${day}/${month}/${year}`;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+
+  return parsed.toLocaleDateString("pt-BR");
+};
+
+const parseAmountInput = (value) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
+
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("family");
   const [token, setToken] = useState("");
@@ -663,7 +692,8 @@ export default function DashboardPage() {
   }, [loading, notificationEnabled]);
 
   const handleAddExpense = async () => {
-    if (!expenseForm.amount || Number(expenseForm.amount) <= 0) {
+    const amount = parseAmountInput(expenseForm.amount);
+    if (!expenseForm.amount || !Number.isFinite(amount) || amount <= 0) {
       setError("Informe um valor de despesa valido");
       return;
     }
@@ -677,7 +707,7 @@ export default function DashboardPage() {
       setError("");
       await createExpense(token, {
         category: expenseForm.category,
-        amount: Number(expenseForm.amount),
+        amount,
         competencia: competenceDateFromMonth(expenseForm.competence || monthFilter),
       });
       setExpenseForm({ category: CATEGORY_OPTIONS[0].api, amount: "", competence: monthFilter });
@@ -689,7 +719,8 @@ export default function DashboardPage() {
   };
 
   const handleAddIncome = async () => {
-    if (!incomeForm.amount || Number(incomeForm.amount) <= 0) {
+    const amount = parseAmountInput(incomeForm.amount);
+    if (!incomeForm.amount || !Number.isFinite(amount) || amount <= 0) {
       setError("Informe um valor de renda valido");
       return;
     }
@@ -697,7 +728,7 @@ export default function DashboardPage() {
     try {
       setError("");
       await createIncome(token, {
-        amount: Number(incomeForm.amount),
+        amount,
         competencia: competenceDateFromMonth(incomeForm.competence || monthFilter),
       });
       setIncomeForm({ amount: "", competence: monthFilter });
@@ -856,14 +887,15 @@ export default function DashboardPage() {
   ]);
 
   const handleAddPersonalIncome = async () => {
-    if (!personalIncomeForm.description.trim() || Number(personalIncomeForm.amount) <= 0) {
+    const amount = parseAmountInput(personalIncomeForm.amount);
+    if (!personalIncomeForm.description.trim() || !Number.isFinite(amount) || amount <= 0) {
       setError("Preencha descricao e valor para receita pessoal");
       return;
     }
     try {
       await createPersonalIncome(token, {
         description: personalIncomeForm.description,
-        amount: Number(personalIncomeForm.amount),
+        amount,
         category: personalIncomeForm.category,
         competencia: competenceDateFromMonth(personalIncomeForm.competence),
       });
@@ -876,14 +908,15 @@ export default function DashboardPage() {
   };
 
   const handleAddPersonalExpense = async () => {
-    if (!personalExpenseForm.description.trim() || Number(personalExpenseForm.amount) <= 0) {
+    const amount = parseAmountInput(personalExpenseForm.amount);
+    if (!personalExpenseForm.description.trim() || !Number.isFinite(amount) || amount <= 0) {
       setError("Preencha descricao e valor para despesa pessoal");
       return;
     }
     try {
       await createPersonalExpense(token, {
         description: personalExpenseForm.description,
-        amount: Number(personalExpenseForm.amount),
+        amount,
         category: personalExpenseForm.category,
         competencia: competenceDateFromMonth(personalExpenseForm.competence),
       });
@@ -896,14 +929,15 @@ export default function DashboardPage() {
   };
 
   const handleAddPersonalInvestment = async () => {
-    if (!personalInvestmentForm.description.trim() || Number(personalInvestmentForm.amount) <= 0) {
+    const amount = parseAmountInput(personalInvestmentForm.amount);
+    if (!personalInvestmentForm.description.trim() || !Number.isFinite(amount) || amount <= 0) {
       setError("Preencha descricao e valor para investimento pessoal");
       return;
     }
     try {
       await createPersonalInvestment(token, {
         description: personalInvestmentForm.description,
-        amount: Number(personalInvestmentForm.amount),
+        amount,
         investment_type: personalInvestmentForm.investment_type,
         competencia: competenceDateFromMonth(personalInvestmentForm.competence),
       });
@@ -932,7 +966,7 @@ export default function DashboardPage() {
       return;
     }
 
-    const amount = Number(personalEditModal.amount);
+    const amount = parseAmountInput(personalEditModal.amount);
     if (!personalEditModal.description.trim() || !amount || amount <= 0) {
       setError("Informe descricao e valor validos");
       return;
@@ -1110,7 +1144,7 @@ export default function DashboardPage() {
       return;
     }
 
-    const amount = Number(editModal.amount);
+    const amount = parseAmountInput(editModal.amount);
     if (!amount || amount <= 0) {
       setError(editModal.type === "expense" ? "Informe um valor de despesa valido" : "Informe um valor de renda valido");
       pushToast("error", "Valor invalido", "Informe um valor maior que zero.");
@@ -1142,7 +1176,7 @@ export default function DashboardPage() {
       }
 
       setEditModal(null);
-      await refreshPersonalData();
+      await refreshFamilyData();
     } catch (err) {
       const message = err.message || "Erro ao editar lancamento";
       setError(message);
@@ -1171,7 +1205,7 @@ export default function DashboardPage() {
       }
 
       setDeleteModal(null);
-      await refreshPersonalData();
+      await refreshFamilyData();
     } catch (err) {
       const message = err.message || "Erro ao excluir lancamento";
       setError(message);
@@ -1616,7 +1650,7 @@ export default function DashboardPage() {
                           {API_CATEGORY_TO_LABEL[expense.category] || expense.category}
                         </td>
                         <td className="p-2">{brl(expense.amount)}</td>
-                        <td className="p-2">{new Date(expense.competencia || expense.created_at).toLocaleDateString("pt-BR")}</td>
+                        <td className="p-2">{formatCompetenceDate(expense.competencia || expense.created_at)}</td>
                         <td className="p-2">
                           {isMine ? (
                             <div className="flex flex-wrap gap-1">
@@ -1662,7 +1696,7 @@ export default function DashboardPage() {
                           </span>
                         </td>
                         <td className="p-2">{brl(income.amount)}</td>
-                        <td className="p-2">{new Date(income.competencia || income.created_at).toLocaleDateString("pt-BR")}</td>
+                        <td className="p-2">{formatCompetenceDate(income.competencia || income.created_at)}</td>
                         <td className="p-2">
                           {isMine ? (
                             <div className="flex flex-wrap gap-1">
@@ -1818,7 +1852,7 @@ export default function DashboardPage() {
                         <span className="rounded-full bg-slate-800/80 px-2 py-0.5 text-[11px] text-slate-200">
                           {ownerLabel(tx.owner)}
                         </span>
-                        <p className="text-xs text-slate-400">{new Date(tx.competence).toLocaleString("pt-BR")}</p>
+                        <p className="text-xs text-slate-400">{formatCompetenceDate(tx.competence)}</p>
                       </div>
                     </div>
                     <p className={`text-sm font-semibold ${tx.type === "expense" ? "text-rose-300" : "text-emerald-300"}`}>
@@ -1893,7 +1927,7 @@ export default function DashboardPage() {
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="font-medium text-white">{row.description}</p>
-                                <p className="text-xs text-slate-400">{row.category} · {new Date(row.competencia || row.created_at).toLocaleDateString("pt-BR")}</p>
+                                <p className="text-xs text-slate-400">{row.category} · {formatCompetenceDate(row.competencia || row.created_at)}</p>
                               </div>
                               <p className="text-emerald-300">{brl(row.amount)}</p>
                             </div>
@@ -1933,7 +1967,7 @@ export default function DashboardPage() {
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="font-medium text-white">{row.description}</p>
-                                <p className="text-xs text-slate-400">{row.category} · {new Date(row.competencia || row.created_at).toLocaleDateString("pt-BR")}</p>
+                                <p className="text-xs text-slate-400">{row.category} · {formatCompetenceDate(row.competencia || row.created_at)}</p>
                               </div>
                               <p className="text-rose-300">{brl(row.amount)}</p>
                             </div>
@@ -1973,7 +2007,7 @@ export default function DashboardPage() {
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="font-medium text-white">{row.description}</p>
-                                <p className="text-xs text-slate-400">{row.investment_type} · {new Date(row.competencia || row.created_at).toLocaleDateString("pt-BR")}</p>
+                                <p className="text-xs text-slate-400">{row.investment_type} · {formatCompetenceDate(row.competencia || row.created_at)}</p>
                               </div>
                               <p className="text-violet-300">{brl(row.amount)}</p>
                             </div>
@@ -2123,6 +2157,9 @@ export default function DashboardPage() {
                 <motion.section variants={itemVariants} className="grid gap-4 lg:grid-cols-3" id="personal-charts">
                   <article className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-base font-semibold">Receita x Despesa Pessoal</h3>
+                    {filteredPersonalIncomes.length === 0 && filteredPersonalExpenses.length === 0 && filteredPersonalInvestments.length === 0 ? (
+                      <p className="mb-2 text-xs text-slate-400">Sem dados no mes selecionado. Adicione lancamentos para gerar os graficos.</p>
+                    ) : null}
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart key={`personal-income-vs-expense-${monthFilter}-${personalIncomeTotal}-${personalExpenseTotal}-${personalInvestmentTotal}`} data={personalIncomeVsExpense}>
