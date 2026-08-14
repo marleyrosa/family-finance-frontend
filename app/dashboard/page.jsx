@@ -30,6 +30,7 @@ import {
   fetchPersonalReportCsv,
   fetchPersonalReportPdf,
   getCurrentUser,
+  getFamilyBalanceHistory,
   getPersonalSummary,
   getSplit,
   listExpenses,
@@ -173,6 +174,7 @@ export default function DashboardPage() {
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [split, setSplit] = useState({ users: [] });
+  const [balanceHistory, setBalanceHistory] = useState([]);
   const [personalSummary, setPersonalSummary] = useState({ income: 0, expense: 0, investments: 0, balance: 0 });
   const [personalIncomes, setPersonalIncomes] = useState([]);
   const [personalExpenses, setPersonalExpenses] = useState([]);
@@ -190,19 +192,21 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [notificationEnabled, setNotificationEnabled] = useState(false);
 
-  const [expenseForm, setExpenseForm] = useState({ category: CATEGORY_OPTIONS[0].api, amount: "", competence: currentMonth() });
-  const [incomeForm, setIncomeForm] = useState({ amount: "", competence: currentMonth() });
+  const [expenseForm, setExpenseForm] = useState({ category: CATEGORY_OPTIONS[0].api, amount: "", competence: currentMonth(), comentario: "" });
+  const [incomeForm, setIncomeForm] = useState({ amount: "", competence: currentMonth(), comentario: "" });
   const [personalIncomeForm, setPersonalIncomeForm] = useState({
     description: "",
     amount: "",
     category: PERSONAL_CATEGORIES[0],
     competence: currentMonth(),
+    comentario: "",
   });
   const [personalExpenseForm, setPersonalExpenseForm] = useState({
     description: "",
     amount: "",
     category: PERSONAL_CATEGORIES[0],
     competence: currentMonth(),
+    comentario: "",
   });
   const [personalInvestmentForm, setPersonalInvestmentForm] = useState({
     description: "",
@@ -227,16 +231,19 @@ export default function DashboardPage() {
     }, 4600);
   };
 
-  const loadFamilyData = async (authToken) => {
-    const [expensesData, incomesData, splitData] = await Promise.all([
+  const loadFamilyData = async (authToken, monthValue = monthFilter) => {
+    const [year, month] = monthValue.split("-").map(Number);
+    const [expensesData, incomesData, splitData, historyData] = await Promise.all([
       listExpenses(authToken),
       listIncomes(authToken),
-      getSplit(authToken),
+      getSplit(authToken, month, year),
+      getFamilyBalanceHistory(authToken),
     ]);
 
     setExpenses(expensesData || []);
     setIncomes(incomesData || []);
     setSplit(splitData || { users: [] });
+    setBalanceHistory((historyData && historyData.history) || []);
   };
 
   const loadPersonalData = async (authToken, monthValue = monthFilter) => {
@@ -255,7 +262,7 @@ export default function DashboardPage() {
 
   const refreshFamilyData = async () => {
     if (!token) return;
-    await loadFamilyData(token);
+    await loadFamilyData(token, monthFilter);
   };
 
   const refreshPersonalData = async () => {
@@ -357,7 +364,7 @@ export default function DashboardPage() {
     const run = async () => {
       try {
         if (activeTab === "family") {
-          await loadFamilyData(token);
+          await loadFamilyData(token, monthFilter);
         } else {
           await loadPersonalData(token, monthFilter);
         }
@@ -380,6 +387,16 @@ export default function DashboardPage() {
 
     loadPersonalData(token, monthFilter).catch(() => {
       setPersonalSummary({ income: 0, expense: 0, investments: 0, balance: 0 });
+    });
+  }, [monthFilter, activeTab, token]);
+
+  useEffect(() => {
+    if (activeTab !== "family" || !token) {
+      return;
+    }
+
+    loadFamilyData(token, monthFilter).catch(() => {
+      setSplit({ users: [] });
     });
   }, [monthFilter, activeTab, token]);
 
@@ -430,11 +447,13 @@ export default function DashboardPage() {
       map.set(category, (map.get(category) || 0) + amount);
     }
 
-    return Array.from(map.entries()).map(([category, amount]) => ({
+    const dataset = Array.from(map.entries()).map(([category, amount]) => ({
       category,
       amount,
       pct_income: monthlyIncome > 0 ? (amount / monthlyIncome) * 100 : 0,
     }));
+
+    return dataset.length ? dataset : [{ category: "Sem despesas", amount: 0, pct_income: 0 }];
   }, [filteredExpenses, monthlyIncome]);
 
   const commitmentByCategory = useMemo(
@@ -709,8 +728,9 @@ export default function DashboardPage() {
         category: expenseForm.category,
         amount,
         competencia: competenceDateFromMonth(expenseForm.competence || monthFilter),
+        comentario: expenseForm.comentario || null,
       });
-      setExpenseForm({ category: CATEGORY_OPTIONS[0].api, amount: "", competence: monthFilter });
+      setExpenseForm({ category: CATEGORY_OPTIONS[0].api, amount: "", competence: monthFilter, comentario: "" });
       await refreshFamilyData();
       setShowExpenseForm(false);
     } catch (err) {
@@ -730,8 +750,9 @@ export default function DashboardPage() {
       await createIncome(token, {
         amount,
         competencia: competenceDateFromMonth(incomeForm.competence || monthFilter),
+        comentario: incomeForm.comentario || null,
       });
-      setIncomeForm({ amount: "", competence: monthFilter });
+      setIncomeForm({ amount: "", competence: monthFilter, comentario: "" });
       await refreshFamilyData();
       setShowIncomeForm(false);
     } catch (err) {
@@ -898,8 +919,9 @@ export default function DashboardPage() {
         amount,
         category: personalIncomeForm.category,
         competencia: competenceDateFromMonth(personalIncomeForm.competence),
+        comentario: personalIncomeForm.comentario || null,
       });
-      setPersonalIncomeForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter });
+      setPersonalIncomeForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter, comentario: "" });
       setShowPersonalIncomeForm(false);
       await refreshPersonalData();
     } catch (err) {
@@ -919,8 +941,9 @@ export default function DashboardPage() {
         amount,
         category: personalExpenseForm.category,
         competencia: competenceDateFromMonth(personalExpenseForm.competence),
+        comentario: personalExpenseForm.comentario || null,
       });
-      setPersonalExpenseForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter });
+      setPersonalExpenseForm({ description: "", amount: "", category: PERSONAL_CATEGORIES[0], competence: monthFilter, comentario: "" });
       setShowPersonalExpenseForm(false);
       await refreshPersonalData();
     } catch (err) {
@@ -958,6 +981,7 @@ export default function DashboardPage() {
       category: item.category || PERSONAL_CATEGORIES[0],
       investment_type: item.investment_type || INVESTMENT_TYPES[0],
       competence: monthKeyFromValue(item.competencia || item.created_at),
+      comentario: item.comentario || "",
     });
   };
 
@@ -982,6 +1006,7 @@ export default function DashboardPage() {
           amount,
           category: personalEditModal.category,
           competencia: competenceDateFromMonth(personalEditModal.competence || monthFilter),
+          comentario: personalEditModal.comentario || null,
         };
         await updatePersonalIncome(token, personalEditModal.id, updatedItem);
         syncPersonalState(
@@ -995,6 +1020,7 @@ export default function DashboardPage() {
           amount,
           category: personalEditModal.category,
           competencia: competenceDateFromMonth(personalEditModal.competence || monthFilter),
+          comentario: personalEditModal.comentario || null,
         };
         await updatePersonalExpense(token, personalEditModal.id, updatedItem);
         syncPersonalState(
@@ -1127,6 +1153,7 @@ export default function DashboardPage() {
       category: expense.category,
       amount: String(expense.amount),
       competence: monthValueFromDate(expense.competencia || expense.created_at),
+      comentario: expense.comentario || "",
     });
   };
 
@@ -1136,6 +1163,7 @@ export default function DashboardPage() {
       id: income.id,
       amount: String(income.amount),
       competence: monthValueFromDate(income.competencia || income.created_at),
+      comentario: income.comentario || "",
     });
   };
 
@@ -1165,12 +1193,14 @@ export default function DashboardPage() {
           category: editModal.category,
           amount,
           competencia: competenceDateFromMonth(editModal.competence || monthFilter),
+          comentario: editModal.comentario || null,
         });
         pushToast("success", "Despesa atualizada", "Lancamento atualizado com sucesso.");
       } else {
         await updateIncome(token, editModal.id, {
           amount,
           competencia: competenceDateFromMonth(editModal.competence || monthFilter),
+          comentario: editModal.comentario || null,
         });
         pushToast("success", "Receita atualizada", "Lancamento atualizado com sucesso.");
       }
@@ -1559,6 +1589,12 @@ export default function DashboardPage() {
                   value={expenseForm.competence}
                   onChange={(e) => setExpenseForm((prev) => ({ ...prev, competence: e.target.value }))}
                 />
+                <input
+                  className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 md:col-span-4"
+                  placeholder="Comentario (opcional)"
+                  value={expenseForm.comentario}
+                  onChange={(e) => setExpenseForm((prev) => ({ ...prev, comentario: e.target.value }))}
+                />
                 <button className="rounded-xl bg-fuchsia-600 px-3 py-2 font-medium text-white md:col-span-1" onClick={handleAddExpense}>
                   Salvar Despesa
                 </button>
@@ -1583,6 +1619,12 @@ export default function DashboardPage() {
                   className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
                   value={incomeForm.competence}
                   onChange={(e) => setIncomeForm((prev) => ({ ...prev, competence: e.target.value }))}
+                />
+                <input
+                  className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 md:col-span-3"
+                  placeholder="Comentario (opcional)"
+                  value={incomeForm.comentario}
+                  onChange={(e) => setIncomeForm((prev) => ({ ...prev, comentario: e.target.value }))}
                 />
                 <button className="rounded-xl bg-sky-600 px-3 py-2 font-medium text-white" onClick={handleAddIncome}>
                   Salvar Receita
@@ -1633,6 +1675,7 @@ export default function DashboardPage() {
                     <th className="p-2">Categoria</th>
                     <th className="p-2">Valor</th>
                     <th className="p-2">Competencia</th>
+                    <th className="p-2">Comentario</th>
                     <th className="p-2">Acoes</th>
                   </tr>
                 </thead>
@@ -1651,6 +1694,7 @@ export default function DashboardPage() {
                         </td>
                         <td className="p-2">{brl(expense.amount)}</td>
                         <td className="p-2">{formatCompetenceDate(expense.competencia || expense.created_at)}</td>
+                        <td className="p-2 text-xs text-slate-400">{expense.comentario || "-"}</td>
                         <td className="p-2">
                           {isMine ? (
                             <div className="flex flex-wrap gap-1">
@@ -1682,6 +1726,7 @@ export default function DashboardPage() {
                     <th className="p-2">Responsavel</th>
                     <th className="p-2">Valor</th>
                     <th className="p-2">Competencia</th>
+                    <th className="p-2">Comentario</th>
                     <th className="p-2">Acoes</th>
                   </tr>
                 </thead>
@@ -1697,6 +1742,7 @@ export default function DashboardPage() {
                         </td>
                         <td className="p-2">{brl(income.amount)}</td>
                         <td className="p-2">{formatCompetenceDate(income.competencia || income.created_at)}</td>
+                        <td className="p-2 text-xs text-slate-400">{income.comentario || "-"}</td>
                         <td className="p-2">
                           {isMine ? (
                             <div className="flex flex-wrap gap-1">
@@ -1740,6 +1786,41 @@ export default function DashboardPage() {
                       <td className="p-2">{brl(entry.amount_to_pay)}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          </motion.section>
+
+          <motion.section variants={itemVariants} className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
+            <h3 className="mb-1 text-lg font-semibold">Sobras e Perdas Acumuladas</h3>
+            <p className="mb-3 text-xs text-slate-400">
+              Historico mes a mes, apenas para consulta. Nao interfere no calculo do mes selecionado.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-100">
+                <thead>
+                  <tr>
+                    <th className="p-2">Mes</th>
+                    <th className="p-2">Sobra</th>
+                    <th className="p-2">Prejuizo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {balanceHistory.length ? (
+                    balanceHistory.map((row) => (
+                      <tr key={row.competencia} className="border-t border-white/10">
+                        <td className="p-2">{row.competencia}</td>
+                        <td className="p-2 text-emerald-300">{row.sobra > 0 ? brl(row.sobra) : "-"}</td>
+                        <td className="p-2 text-rose-300">{row.prejuizo > 0 ? brl(row.prejuizo) : "-"}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="p-2 text-slate-400" colSpan={3}>
+                        Nenhum historico encontrado.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1928,6 +2009,7 @@ export default function DashboardPage() {
                               <div>
                                 <p className="font-medium text-white">{row.description}</p>
                                 <p className="text-xs text-slate-400">{row.category} · {formatCompetenceDate(row.competencia || row.created_at)}</p>
+                                {row.comentario ? <p className="text-xs italic text-slate-500">{row.comentario}</p> : null}
                               </div>
                               <p className="text-emerald-300">{brl(row.amount)}</p>
                             </div>
@@ -1968,6 +2050,7 @@ export default function DashboardPage() {
                               <div>
                                 <p className="font-medium text-white">{row.description}</p>
                                 <p className="text-xs text-slate-400">{row.category} · {formatCompetenceDate(row.competencia || row.created_at)}</p>
+                                {row.comentario ? <p className="text-xs italic text-slate-500">{row.comentario}</p> : null}
                               </div>
                               <p className="text-rose-300">{brl(row.amount)}</p>
                             </div>
@@ -2063,6 +2146,12 @@ export default function DashboardPage() {
                         value={personalIncomeForm.competence}
                         onChange={(e) => setPersonalIncomeForm((prev) => ({ ...prev, competence: e.target.value }))}
                       />
+                      <input
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 md:col-span-4"
+                        placeholder="Comentario (opcional)"
+                        value={personalIncomeForm.comentario}
+                        onChange={(e) => setPersonalIncomeForm((prev) => ({ ...prev, comentario: e.target.value }))}
+                      />
                       <button className="rounded-xl bg-sky-600 px-3 py-2 text-white" onClick={handleAddPersonalIncome}>
                         Salvar Receita Pessoal
                       </button>
@@ -2104,6 +2193,12 @@ export default function DashboardPage() {
                         className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2"
                         value={personalExpenseForm.competence}
                         onChange={(e) => setPersonalExpenseForm((prev) => ({ ...prev, competence: e.target.value }))}
+                      />
+                      <input
+                        className="rounded-xl border border-white/10 bg-slate-950 px-3 py-2 md:col-span-5"
+                        placeholder="Comentario (opcional)"
+                        value={personalExpenseForm.comentario}
+                        onChange={(e) => setPersonalExpenseForm((prev) => ({ ...prev, comentario: e.target.value }))}
                       />
                       <button className="rounded-xl bg-fuchsia-600 px-3 py-2 text-white" onClick={handleAddPersonalExpense}>
                         Salvar Despesa Pessoal
@@ -2362,6 +2457,13 @@ export default function DashboardPage() {
                       value={editModal.competence}
                       onChange={(e) => setEditModal((prev) => ({ ...prev, competence: e.target.value }))}
                     />
+
+                    <input
+                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                      placeholder="Comentario (opcional)"
+                      value={editModal.comentario || ""}
+                      onChange={(e) => setEditModal((prev) => ({ ...prev, comentario: e.target.value }))}
+                    />
                   </div>
 
                   <div className="mt-4 flex justify-end gap-2">
@@ -2445,6 +2547,13 @@ export default function DashboardPage() {
                       className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
                       value={personalEditModal.competence}
                       onChange={(e) => setPersonalEditModal((prev) => ({ ...prev, competence: e.target.value }))}
+                    />
+
+                    <input
+                      className="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm"
+                      placeholder="Comentario (opcional)"
+                      value={personalEditModal.comentario || ""}
+                      onChange={(e) => setPersonalEditModal((prev) => ({ ...prev, comentario: e.target.value }))}
                     />
                   </div>
 

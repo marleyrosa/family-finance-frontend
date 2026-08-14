@@ -88,8 +88,13 @@ export async function listIncomes(token) {
   return apiRequest("/incomes", {}, token);
 }
 
-export async function getSplit(token) {
-  return apiRequest("/split", {}, token);
+export async function getSplit(token, mes, ano) {
+  const query = mes && ano ? `?mes=${mes}&ano=${ano}` : "";
+  return apiRequest(`/split${query}`, {}, token);
+}
+
+export async function getFamilyBalanceHistory(token) {
+  return apiRequest("/family/balance-history", {}, token);
 }
 
 export async function createExpense(token, payload) {
