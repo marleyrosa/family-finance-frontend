@@ -233,31 +233,56 @@ export default function DashboardPage() {
 
   const loadFamilyData = async (authToken, monthValue = monthFilter) => {
     const [year, month] = monthValue.split("-").map(Number);
-    const [expensesData, incomesData, splitData, historyData] = await Promise.all([
+    const [expensesData, incomesData, splitData] = await Promise.all([
       listExpenses(authToken),
       listIncomes(authToken),
       getSplit(authToken, month, year),
-      getFamilyBalanceHistory(authToken),
     ]);
 
     setExpenses(expensesData || []);
     setIncomes(incomesData || []);
     setSplit(splitData || { users: [] });
-    setBalanceHistory((historyData && historyData.history) || []);
+
+    // isolado do carregamento critico: falha aqui nao pode zerar o restante do dashboard
+    try {
+      const historyData = await getFamilyBalanceHistory(authToken);
+      setBalanceHistory((historyData && historyData.history) || []);
+    } catch {
+      setBalanceHistory([]);
+    }
   };
 
   const loadPersonalData = async (authToken, monthValue = monthFilter) => {
-    const [summaryData, incomesData, expensesData, investmentsData] = await Promise.all([
-      getPersonalSummary(authToken, Number(monthValue.slice(5, 7)), Number(monthValue.slice(0, 4))),
+    const mes = Number(monthValue.slice(5, 7));
+    const ano = Number(monthValue.slice(0, 4));
+
+    // cada fonte e isolada: uma falha isolada nao pode zerar as demais (mesmo bug corrigido na aba familia)
+    const results = await Promise.allSettled([
+      getPersonalSummary(authToken, mes, ano),
       listPersonalIncomes(authToken),
       listPersonalExpenses(authToken),
       listPersonalInvestments(authToken),
     ]);
 
-    setPersonalSummary(summaryData || { income: 0, expense: 0, investments: 0, balance: 0 });
-    setPersonalIncomes(incomesData || []);
-    setPersonalExpenses(expensesData || []);
-    setPersonalInvestments(investmentsData || []);
+    const [summaryResult, incomesResult, expensesResult, investmentsResult] = results;
+
+    if (summaryResult.status === "fulfilled") {
+      setPersonalSummary(summaryResult.value || { income: 0, expense: 0, investments: 0, balance: 0 });
+    }
+    if (incomesResult.status === "fulfilled") {
+      setPersonalIncomes(incomesResult.value || []);
+    }
+    if (expensesResult.status === "fulfilled") {
+      setPersonalExpenses(expensesResult.value || []);
+    }
+    if (investmentsResult.status === "fulfilled") {
+      setPersonalInvestments(investmentsResult.value || []);
+    }
+
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) {
+      throw failed.reason;
+    }
   };
 
   const refreshFamilyData = async () => {
