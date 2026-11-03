@@ -256,6 +256,7 @@ export default function DashboardPage() {
   const [statementOcrReviewRequired, setStatementOcrReviewRequired] = useState(false);
   const [statementImportTarget, setStatementImportTarget] = useState("family");
   const [statementImportText, setStatementImportText] = useState("");
+  const [statementPasswordPrompt, setStatementPasswordPrompt] = useState(null);
   const [goals, setGoals] = useState({ monthlyGoal: 0, savingsGoal: 0 });
 
   const [editModal, setEditModal] = useState(null);
@@ -1114,6 +1115,7 @@ export default function DashboardPage() {
     setStatementImportRows([]);
     setStatementImportName("");
     setStatementOcrReviewRequired(false);
+    setStatementPasswordPrompt(null);
     if (!file) {
       return;
     }
@@ -1125,14 +1127,27 @@ export default function DashboardPage() {
       return;
     }
 
+    await processStatementFile(file, isPdf, "");
+  };
+
+  const handleStatementPassword = async (password) => {
+    if (!statementPasswordPrompt) {
+      return;
+    }
+    setStatementImportError("");
+    await processStatementFile(statementPasswordPrompt.file, true, password, statementPasswordPrompt.bytes);
+  };
+
+  const processStatementFile = async (file, isPdf, password, knownBytes) => {
+    let fileBytes = knownBytes;
     try {
       setStatementProcessing(isPdf ? "Lendo PDF localmente..." : "Lendo CSV...");
-      const fileBytes = await file.arrayBuffer();
+      fileBytes = fileBytes || (await file.arrayBuffer());
       let csvText;
       let usedOcr = false;
       if (isPdf) {
         const { extractPdfTextLines } = await import("../../dashboard/statement-pdf-browser.mjs");
-        const extracted = await extractPdfTextLines(fileBytes, setStatementProcessing);
+        const extracted = await extractPdfTextLines(fileBytes, setStatementProcessing, password);
         usedOcr = extracted.usedOcr;
         const { lines } = extracted;
         csvText = pdfLinesToCsv(lines, monthFilter);
@@ -1162,7 +1177,14 @@ export default function DashboardPage() {
       setStatementImportRows(usedOcr ? rows.map((row) => ({ ...row, selected: false })) : rows);
       setStatementImportText(csvText);
       setStatementImportName(file.name);
+      setStatementPasswordPrompt(null);
     } catch (err) {
+      if (isPdf && err?.name === "PasswordException") {
+        setStatementPasswordPrompt({ file, bytes: fileBytes, incorrect: Boolean(password) });
+        setStatementImportName("");
+        return;
+      }
+      setStatementPasswordPrompt(null);
       setStatementImportError(
         isPdf
           ? err.message || "Nao foi possivel ler o PDF."
@@ -1940,10 +1962,13 @@ export default function DashboardPage() {
             target={statementImportTarget}
             onTargetChange={handleStatementImportTargetChange}
             onFileChange={handleStatementFile}
+            passwordPrompt={statementPasswordPrompt}
+            onPasswordSubmit={handleStatementPassword}
             onUpdateRow={updateStatementImportRow}
             onSelectValid={handleSelectImportableRows}
             onImport={handleImportSelectedRows}
             onClear={() => {
+              setStatementPasswordPrompt(null);
               setStatementImportRows([]);
               setStatementImportName("");
               setStatementImportError("");

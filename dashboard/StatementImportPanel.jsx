@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import statementImportParser from "./statement-import";
 
 const { FAMILY_CATEGORIES, PERSONAL_CATEGORIES } = statementImportParser;
@@ -14,11 +15,20 @@ export default function StatementImportPanel({
   target,
   onTargetChange,
   onFileChange,
+  passwordPrompt,
+  onPasswordSubmit,
   onUpdateRow,
   onSelectValid,
   onImport,
   onClear,
 }) {
+  const [pdfPassword, setPdfPassword] = useState("");
+  const submitPassword = async (event) => {
+    event.preventDefault();
+    const password = pdfPassword;
+    setPdfPassword("");
+    await onPasswordSubmit(password);
+  };
   const categories = target === "family" ? FAMILY_CATEGORIES : PERSONAL_CATEGORIES;
   const selectedCount = rows.filter((row) => row.selected && !row.imported).length;
   const duplicateCount = rows.filter((row) => row.possibleDuplicate).length;
@@ -70,6 +80,44 @@ export default function StatementImportPanel({
         <p role="status" aria-live="polite" className="mt-3 rounded-xl bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">
           {processing}
         </p>
+      ) : null}
+      {passwordPrompt ? (
+        <form onSubmit={submitPassword} className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3">
+          <label className="block text-sm text-amber-100">
+            {passwordPrompt.incorrect
+              ? "Senha incorreta. Tente novamente."
+              : `O PDF "${passwordPrompt.file.name}" e protegido por senha.`}
+            <input
+              aria-label="Senha do PDF"
+              className="mt-2 block w-full max-w-xs rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white"
+              type="password"
+              autoComplete="off"
+              autoFocus
+              placeholder="Senha do PDF"
+              value={pdfPassword}
+              disabled={Boolean(processing)}
+              onChange={(event) => setPdfPassword(event.target.value)}
+            />
+          </label>
+          <p className="mt-1 text-xs text-amber-100/70">A senha e usada so neste navegador e nao e enviada nem salva.</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="submit"
+              className="rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-cyan-500 disabled:opacity-60"
+              disabled={!pdfPassword || Boolean(processing)}
+            >
+              Abrir PDF
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-slate-200 transition hover:bg-white/10"
+              disabled={Boolean(processing)}
+              onClick={onClear}
+            >
+              Cancelar
+            </button>
+          </div>
+        </form>
       ) : null}
       {ocrReviewRequired ? (
         <p role="status" className="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-100">

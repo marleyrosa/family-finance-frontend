@@ -4,12 +4,22 @@ const MAX_PDF_PAGES = 20;
 const MAX_OCR_PAGES = 5;
 const { groupTextItems } = statementPdf;
 
-export async function extractPdfTextLines(arrayBuffer, onProgress = () => {}) {
+export async function extractPdfTextLines(arrayBuffer, onProgress = () => {}, password = "") {
   const pdfjs = await import("pdfjs-dist/build/pdf.mjs");
   pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) });
-  const pdfDocument = await loadingTask.promise;
+  // slice(0): o pdf.js transfere o buffer ao worker; a copia permite tentar de novo com outra senha.
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(arrayBuffer.slice(0)),
+    password: password || undefined,
+  });
+  let pdfDocument;
+  try {
+    pdfDocument = await loadingTask.promise;
+  } catch (error) {
+    await loadingTask.destroy();
+    throw error;
+  }
   try {
     if (pdfDocument.numPages > MAX_PDF_PAGES) {
       throw new Error(`O PDF tem ${pdfDocument.numPages} paginas; o limite atual e ${MAX_PDF_PAGES}.`);
