@@ -9,6 +9,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -31,6 +32,7 @@ import {
   fetchPersonalReportPdf,
   getCurrentUser,
   getFamilyBalanceHistory,
+  getPersonalInsights,
   getPersonalSummary,
   getSplit,
   listExpenses,
@@ -44,6 +46,16 @@ import {
   updatePersonalIncome,
   updatePersonalInvestment,
 } from "../../dashboard/api";
+import transactionDraftParser from "../../dashboard/transaction-draft";
+import statementImportParser from "../../dashboard/statement-import";
+import statementPdfParser from "../../dashboard/statement-pdf";
+import StatementImportPanel from "../../dashboard/StatementImportPanel";
+
+const { parseTransactionDraft } = transactionDraftParser;
+const { parseStatementCsv } = statementImportParser;
+const { pdfLinesToCsv } = statementPdfParser;
+const MAX_STATEMENT_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_STATEMENT_PDF_BYTES = 10 * 1024 * 1024;
 
 const CATEGORY_OPTIONS = [
   { key: "supermarket", label: "Supermercado", api: "Supermercado" },
@@ -88,7 +100,7 @@ const PERSONAL_SIDEBAR_ITEMS = [
   { id: "personal-charts", label: "Graficos Pessoais" },
 ];
 
-const PERSONAL_CATEGORIES = ["Moradia", "Lazer", "Saude", "Transporte", "Educacao", "Assinaturas", "Outros"];
+const PERSONAL_CATEGORIES = ["Moradia", "Alimentacao", "Lazer", "Saude", "Transporte", "Educacao", "Assinaturas", "Outros"];
 const INVESTMENT_TYPES = ["Renda fixa", "Acoes", "Fundos", "Crypto", "Previdencia", "Outros"];
 
 const TOAST_STYLES = {
@@ -156,10 +168,26 @@ const formatCompetenceDate = (value) => {
 };
 
 const parseAmountInput = (value) => {
-  const normalized = String(value ?? "")
+  let normalized = String(value ?? "")
     .trim()
     .replace(/\s+/g, "")
-    .replace(",", ".");
+    .replace(/R\$/gi, "");
+  const lastComma = normalized.lastIndexOf(",");
+  const lastDot = normalized.lastIndexOf(".");
+  if (lastComma >= 0 && lastDot >= 0) {
+    normalized =
+      lastComma > lastDot
+        ? normalized.replace(/\./g, "").replace(",", ".")
+        : normalized.replace(/,/g, "");
+  } else if (lastComma >= 0) {
+    const decimalDigits = normalized.length - lastComma - 1;
+    normalized =
+      decimalDigits > 0 && decimalDigits <= 2
+        ? normalized.replace(/\./g, "").replace(",", ".")
+        : normalized.replace(/,/g, "");
+  } else if (lastDot >= 0 && normalized.length - lastDot - 1 > 2) {
+    normalized = normalized.replace(/\./g, "");
+  }
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : NaN;
 };
@@ -176,6 +204,8 @@ export default function DashboardPage() {
   const [split, setSplit] = useState({ users: [] });
   const [balanceHistory, setBalanceHistory] = useState([]);
   const [personalSummary, setPersonalSummary] = useState({ income: 0, expense: 0, investments: 0, balance: 0 });
+  const [personalInsights, setPersonalInsights] = useState({ category_suggestions: [], spending_alerts: [] });
+  const [personalInsightsError, setPersonalInsightsError] = useState("");
   const [personalIncomes, setPersonalIncomes] = useState([]);
   const [personalExpenses, setPersonalExpenses] = useState([]);
   const [personalInvestments, setPersonalInvestments] = useState([]);
@@ -214,6 +244,18 @@ export default function DashboardPage() {
     investment_type: INVESTMENT_TYPES[0],
     competence: currentMonth(),
   });
+  const [transactionDraftText, setTransactionDraftText] = useState("");
+  const [transactionDraft, setTransactionDraft] = useState(null);
+  const [transactionDraftError, setTransactionDraftError] = useState("");
+  const [savingTransactionDraft, setSavingTransactionDraft] = useState(false);
+  const [statementImportRows, setStatementImportRows] = useState([]);
+  const [statementImportName, setStatementImportName] = useState("");
+  const [statementImportError, setStatementImportError] = useState("");
+  const [importingStatement, setImportingStatement] = useState(false);
+  const [statementProcessing, setStatementProcessing] = useState("");
+  const [statementOcrReviewRequired, setStatementOcrReviewRequired] = useState(false);
+  const [statementImportTarget, setStatementImportTarget] = useState("family");
+  const [statementImportText, setStatementImportText] = useState("");
   const [goals, setGoals] = useState({ monthlyGoal: 0, savingsGoal: 0 });
 
   const [editModal, setEditModal] = useState(null);
@@ -222,6 +264,7 @@ export default function DashboardPage() {
   const [avatarUrl, setAvatarUrl] = useState("");
   const [toasts, setToasts] = useState([]);
   const lastNotificationKey = useRef("");
+  const personalInsightsRequestId = useRef(0);
 
   const pushToast = (type, title, message) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -255,6 +298,23 @@ export default function DashboardPage() {
   const loadPersonalData = async (authToken, monthValue = monthFilter) => {
     const mes = Number(monthValue.slice(5, 7));
     const ano = Number(monthValue.slice(0, 4));
+    const insightsRequestId = ++personalInsightsRequestId.current;
+
+    void getPersonalInsights(authToken, mes, ano)
+      .then((insights) => {
+        if (insightsRequestId !== personalInsightsRequestId.current) {
+          return;
+        }
+        setPersonalInsights(insights || { category_suggestions: [], spending_alerts: [] });
+        setPersonalInsightsError("");
+      })
+      .catch((insightsError) => {
+        if (insightsRequestId !== personalInsightsRequestId.current) {
+          return;
+        }
+        setPersonalInsights({ category_suggestions: [], spending_alerts: [] });
+        setPersonalInsightsError(insightsError?.message || "Nao foi possivel carregar os insights pessoais.");
+      });
 
     // cada fonte e isolada: uma falha isolada nao pode zerar as demais (mesmo bug corrigido na aba familia)
     const results = await Promise.allSettled([
@@ -870,9 +930,8 @@ export default function DashboardPage() {
       const key = row.category || "Outros";
       map.set(key, (map.get(key) || 0) + Number(row.amount || 0));
     }
-    const dataset = Array.from(map.entries()).map(([category, amount]) => ({ category, amount }));
-    return dataset.length ? dataset : hasPersonalData ? [{ category: "Sem despesas", amount: 1 }] : [{ category: "Sem despesas", amount: 0 }];
-  }, [filteredPersonalExpenses, hasPersonalData]);
+    return Array.from(map.entries()).map(([category, amount]) => ({ category, amount }));
+  }, [filteredPersonalExpenses]);
 
   const personalIncomeVsExpense = useMemo(
     () => [
@@ -896,12 +955,6 @@ export default function DashboardPage() {
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([mes, valor]) => ({ mes, valor }));
   }, [personalInvestments, monthFilter]);
-
-  const personalInvestmentsEvolutionChart = useMemo(() => {
-    return personalInvestmentsEvolution.length
-      ? personalInvestmentsEvolution
-      : [{ mes: monthFilter, valor: 0 }];
-  }, [personalInvestmentsEvolution, monthFilter]);
 
   useEffect(() => {
     if (!notificationEnabled || loading || activeTab !== "personal") {
@@ -994,6 +1047,301 @@ export default function DashboardPage() {
       await refreshPersonalData();
     } catch (err) {
       setError(err.message || "Erro ao adicionar investimento pessoal");
+    }
+  };
+
+  const handleParseTransactionDraft = () => {
+    setTransactionDraftError("");
+    try {
+      setTransactionDraft(
+        parseTransactionDraft(transactionDraftText, {
+          defaultMonth: monthFilter,
+        })
+      );
+    } catch (err) {
+      setTransactionDraft(null);
+      setTransactionDraftError(err.message || "Nao foi possivel interpretar o lancamento.");
+    }
+  };
+
+  const handleSaveTransactionDraft = async () => {
+    if (!transactionDraft || savingTransactionDraft) {
+      return;
+    }
+
+    const amount = parseAmountInput(transactionDraft.amount);
+    if (!transactionDraft.description.trim() || !Number.isFinite(amount) || amount <= 0) {
+      setTransactionDraftError("Revise a descricao e informe um valor maior que zero.");
+      return;
+    }
+
+    setSavingTransactionDraft(true);
+    setTransactionDraftError("");
+    try {
+      const payload = {
+        description: transactionDraft.description.trim(),
+        amount,
+        category: transactionDraft.category,
+        competencia: competenceDateFromMonth(transactionDraft.competence),
+      };
+      if (transactionDraft.type === "income") {
+        await createPersonalIncome(token, { ...payload, comentario: null });
+      } else {
+        await createPersonalExpense(token, { ...payload, comentario: null });
+      }
+
+      setTransactionDraft(null);
+      setTransactionDraftText("");
+      pushToast("success", "Lancamento salvo", "O lancamento pessoal foi registrado.");
+      await refreshPersonalData();
+    } catch (err) {
+      setTransactionDraftError(err.message || "Erro ao salvar o lancamento pessoal.");
+    } finally {
+      setSavingTransactionDraft(false);
+    }
+  };
+
+  const handleClearTransactionDraft = () => {
+    setTransactionDraft(null);
+    setTransactionDraftText("");
+    setTransactionDraftError("");
+  };
+
+  const handleStatementFile = async (event) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    setStatementImportError("");
+    setStatementImportRows([]);
+    setStatementImportName("");
+    setStatementOcrReviewRequired(false);
+    if (!file) {
+      return;
+    }
+
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const maxFileBytes = isPdf ? MAX_STATEMENT_PDF_BYTES : MAX_STATEMENT_FILE_BYTES;
+    if (file.size > maxFileBytes) {
+      setStatementImportError(`O arquivo excede o limite de ${isPdf ? "10 MB" : "2 MB"}.`);
+      return;
+    }
+
+    try {
+      setStatementProcessing(isPdf ? "Lendo PDF localmente..." : "Lendo CSV...");
+      const fileBytes = await file.arrayBuffer();
+      let csvText;
+      let usedOcr = false;
+      if (isPdf) {
+        const { extractPdfTextLines } = await import("../../dashboard/statement-pdf-browser.mjs");
+        const extracted = await extractPdfTextLines(fileBytes, setStatementProcessing);
+        usedOcr = extracted.usedOcr;
+        const { lines } = extracted;
+        csvText = pdfLinesToCsv(lines, monthFilter);
+      } else {
+        try {
+          csvText = new TextDecoder("utf-8", { fatal: true }).decode(fileBytes);
+        } catch {
+          csvText = new TextDecoder("windows-1252").decode(fileBytes);
+        }
+      }
+      const existingTransactions = [
+        ...(statementImportTarget === "family" ? expenses : personalExpenses).map((item) => ({
+          ...item,
+          description: statementImportTarget === "family" ? item.comentario || "" : item.description,
+          type: "expense",
+          competence: monthKeyFromValue(item.competencia || item.created_at),
+        })),
+        ...(statementImportTarget === "family" ? incomes : personalIncomes).map((item) => ({
+          ...item,
+          description: statementImportTarget === "family" ? item.comentario || "" : item.description,
+          type: "income",
+          competence: monthKeyFromValue(item.competencia || item.created_at),
+        })),
+      ];
+      const rows = parseStatementCsv(csvText, monthFilter, existingTransactions, statementImportTarget);
+      setStatementOcrReviewRequired(usedOcr);
+      setStatementImportRows(usedOcr ? rows.map((row) => ({ ...row, selected: false })) : rows);
+      setStatementImportText(csvText);
+      setStatementImportName(file.name);
+    } catch (err) {
+      setStatementImportError(
+        isPdf
+          ? err.message || "Nao foi possivel ler o PDF."
+          : err.message || "Nao foi possivel ler o arquivo CSV."
+      );
+    } finally {
+      setStatementProcessing("");
+    }
+  };
+
+  const updateStatementImportRow = (rowNumber, updates) => {
+    setStatementImportRows((rows) => rows.map((row) => {
+      if (row.rowNumber !== rowNumber) {
+        return row;
+      }
+
+      const updatedRow = { ...row, ...updates };
+      if (["description", "amount", "competence"].some((field) => Object.hasOwn(updates, field))) {
+        const amount = parseAmountInput(updatedRow.amount);
+        const [year, month] = String(updatedRow.competence).split("-").map(Number);
+        updatedRow.issue = !updatedRow.description.trim()
+          ? "Descricao ausente."
+          : !Number.isFinite(amount) || amount <= 0
+            ? "Valor ausente ou invalido."
+            : !year || month < 1 || month > 12
+              ? "Competencia invalida."
+              : "";
+      }
+      return updatedRow;
+    }));
+  };
+
+  const handleSelectImportableRows = () => {
+    if (statementOcrReviewRequired) {
+      return;
+    }
+    setStatementImportRows((rows) =>
+      rows.map((row) => ({
+        ...row,
+        selected:
+          !row.issue &&
+          !row.typeNeedsReview &&
+          !row.imported &&
+          !row.possibleDuplicate &&
+          !(statementImportTarget === "family" && row.type === "expense" && row.familyCategoryNeedsReview),
+      }))
+    );
+  };
+
+  const handleStatementImportTargetChange = (target) => {
+    setStatementImportTarget(target);
+    if (!statementImportText) {
+      return;
+    }
+
+    const existingTransactions = [
+      ...(target === "family" ? expenses : personalExpenses).map((item) => ({
+        ...item,
+        description: target === "family" ? item.comentario || "" : item.description,
+        type: "expense",
+        competence: monthKeyFromValue(item.competencia || item.created_at),
+      })),
+      ...(target === "family" ? incomes : personalIncomes).map((item) => ({
+        ...item,
+        description: target === "family" ? item.comentario || "" : item.description,
+        type: "income",
+        competence: monthKeyFromValue(item.competencia || item.created_at),
+      })),
+    ];
+    try {
+      setStatementImportRows(parseStatementCsv(statementImportText, monthFilter, existingTransactions, target));
+      setStatementImportError("");
+    } catch (err) {
+      setStatementImportError(err.message || "Nao foi possivel validar o arquivo para este destino.");
+    }
+  };
+
+  const handleImportSelectedRows = async () => {
+    if (importingStatement) {
+      return;
+    }
+    const selectedRows = statementImportRows.filter(
+      (row) =>
+        row.selected &&
+        !row.issue &&
+        !row.imported &&
+        !row.typeNeedsReview &&
+        !(statementImportTarget === "family" && row.type === "expense" && row.familyCategoryNeedsReview)
+    );
+    if (!selectedRows.length) {
+      setStatementImportError("Selecione ao menos uma linha valida e revise o tipo das linhas ambíguas.");
+      return;
+    }
+
+    setImportingStatement(true);
+    setStatementImportError("");
+    let importedCount = 0;
+    let failedCount = 0;
+
+    for (const row of selectedRows) {
+      const amount = parseAmountInput(row.amount);
+      if (!row.description.trim() || !Number.isFinite(amount) || amount <= 0 || !/^\d{4}-\d{2}$/.test(row.competence)) {
+        updateStatementImportRow(row.rowNumber, {
+          importError: "Revise descricao, valor e competencia antes de importar.",
+        });
+        failedCount += 1;
+        continue;
+      }
+
+      const payload = {
+        amount,
+        competencia: competenceDateFromMonth(row.competence),
+      };
+      try {
+        if (statementImportTarget === "family") {
+          const familyComment = row.description.trim().slice(0, 500);
+          if (row.type === "income") {
+            await createIncome(token, { ...payload, comentario: familyComment });
+          } else {
+            await createExpense(token, {
+              ...payload,
+              category: row.familyCategory,
+              comentario: familyComment,
+            });
+          }
+        } else if (row.type === "income") {
+          await createPersonalIncome(token, {
+            ...payload,
+            description: row.description.trim(),
+            category: row.category || "Outros",
+            comentario: null,
+          });
+        } else {
+          await createPersonalExpense(token, {
+            ...payload,
+            description: row.description.trim(),
+            category: row.category || "Outros",
+            comentario: null,
+          });
+        }
+        updateStatementImportRow(row.rowNumber, {
+          imported: true,
+          selected: false,
+          importError: "",
+        });
+        importedCount += 1;
+      } catch (err) {
+        updateStatementImportRow(row.rowNumber, {
+          selected: false,
+          importError: err.message || "Falha ao importar esta linha.",
+        });
+        failedCount += 1;
+      }
+    }
+
+    let refreshError = "";
+    if (importedCount > 0 || failedCount > 0) {
+      try {
+        if (statementImportTarget === "family") {
+          await refreshFamilyData();
+        } else {
+          await refreshPersonalData();
+        }
+      } catch (err) {
+        refreshError = `Nao foi possivel atualizar o resumo: ${err.message}`;
+      }
+    }
+    setImportingStatement(false);
+    if (failedCount > 0) {
+      setStatementImportError(
+        `${importedCount} importado(s), ${failedCount} com erro. Linhas com erro foram desmarcadas para evitar repeticao acidental. Confira cada linha antes de tentar novamente.${refreshError ? ` ${refreshError}` : ""}`
+      );
+    } else if (importedCount > 0) {
+      const destination =
+        statementImportTarget === "family" ? "financas da familia" : "financas pessoais";
+      pushToast("success", "Importacao concluida", `${importedCount} lancamento(s) importado(s) para ${destination}.`);
+      if (refreshError) {
+        setStatementImportError(refreshError);
+      }
     }
   };
 
@@ -1270,26 +1618,51 @@ export default function DashboardPage() {
 
   const handleAvatarUpload = (event) => {
     const file = event.target.files?.[0];
+    const input = event.currentTarget;
     if (!file) {
       return;
     }
 
     if (!file.type.startsWith("image/")) {
       pushToast("error", "Arquivo invalido", "Selecione uma imagem para avatar.");
+      input.value = "";
+      return;
+    }
+
+    if (file.size > 1.5 * 1024 * 1024) {
+      pushToast("error", "Imagem muito grande", "Escolha uma imagem de ate 1,5 MB.");
+      input.value = "";
       return;
     }
 
     const reader = new FileReader();
     reader.onload = () => {
       const result = String(reader.result || "");
-      setAvatarUrl(result);
-      localStorage.setItem("familymoney_avatar_url", result);
-      pushToast("success", "Avatar atualizado", "Sua foto de perfil foi atualizada.");
+      try {
+        localStorage.setItem("familymoney_avatar_url", result);
+        setAvatarUrl(result);
+        pushToast("success", "Avatar atualizado", "Sua foto foi salva somente neste navegador.");
+      } catch {
+        pushToast("error", "Nao foi possivel salvar", "O armazenamento local esta cheio. Remova a foto atual ou escolha uma imagem menor.");
+      } finally {
+        input.value = "";
+      }
     };
     reader.onerror = () => {
       pushToast("error", "Erro no upload", "Nao foi possivel carregar a imagem.");
+      input.value = "";
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleAvatarRemove = () => {
+    try {
+      localStorage.removeItem("familymoney_avatar_url");
+      setAvatarUrl("");
+      pushToast("success", "Foto removida", "A foto de perfil foi removida deste navegador.");
+    } catch {
+      pushToast("error", "Nao foi possivel remover", "O navegador nao permitiu atualizar o armazenamento local.");
+    }
   };
 
   const handleLogout = () => {
@@ -1310,8 +1683,8 @@ export default function DashboardPage() {
   const userInitial = (user?.nome || user?.email || "F").slice(0, 1).toUpperCase();
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_0%_0%,rgba(180,83,9,0.22),transparent_36%),radial-gradient(circle_at_100%_0%,rgba(99,102,241,0.22),transparent_34%),linear-gradient(180deg,#06070b,#0f121c)] text-slate-100">
-      <div className="mx-auto grid w-full max-w-7xl gap-4 px-3 py-4 md:px-6 md:py-6 lg:grid-cols-[220px,1fr] lg:gap-6">
+    <main className="app-shell min-h-screen text-slate-100">
+      <div className="mx-auto grid w-full max-w-[1480px] gap-4 px-3 py-4 md:px-6 md:py-6 lg:grid-cols-[240px,minmax(0,1fr)] lg:gap-6">
         <motion.aside
           initial={{ opacity: 0, x: -22 }}
           animate={{ opacity: 1, x: 0 }}
@@ -1321,7 +1694,7 @@ export default function DashboardPage() {
           <p className="text-xs uppercase tracking-[0.18em] text-slate-400">FamilYMoney</p>
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-3">
             <div className="flex items-center gap-3">
-              <div className="h-12 w-12 overflow-hidden rounded-2xl bg-slate-900">
+              <div className="h-12 w-12 overflow-hidden rounded-2xl border border-cyan-200/20 bg-slate-900 shadow-[0_0_24px_rgba(34,211,238,0.16)]">
                 {hasCustomAvatar ? (
                   <img src={profileAvatarUrl} alt={userDisplayName} className="h-full w-full object-cover" />
                 ) : (
@@ -1335,10 +1708,16 @@ export default function DashboardPage() {
                 <p className="truncate text-xs text-slate-400">{user?.email || ""}</p>
               </div>
             </div>
-            <label className="mt-2 block cursor-pointer rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-center text-xs text-slate-200 hover:bg-slate-900">
-              Enviar foto do perfil
+            <label className="mt-3 block cursor-pointer rounded-xl border border-cyan-300/20 bg-cyan-300/[0.07] px-3 py-2 text-center text-xs font-medium text-cyan-100 transition hover:border-cyan-200/50 hover:bg-cyan-300/[0.12]">
+              {hasCustomAvatar ? "Trocar foto" : "Adicionar foto"}
               <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
             </label>
+            {hasCustomAvatar ? (
+              <button type="button" className="mt-2 w-full rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-400 transition hover:border-rose-300/30 hover:text-rose-200" onClick={handleAvatarRemove}>
+                Remover foto
+              </button>
+            ) : null}
+            <p className="mt-2 text-center text-[10px] text-slate-500">A imagem fica salva somente neste navegador · ate 1,5 MB</p>
           </div>
           <nav className="mt-4 space-y-1">
             <p className="px-3 py-1 text-xs uppercase tracking-[0.15em] text-slate-500">{activeTab === "family" ? "Financas da Familia" : "Financas Pessoais"}</p>
@@ -1358,7 +1737,7 @@ export default function DashboardPage() {
           <motion.header variants={itemVariants} id="overview" className="frosted rounded-3xl border border-white/10 p-4 md:p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-3">
-                <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-violet-500 text-lg font-bold text-white">
+                <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-200/20 bg-gradient-to-br from-cyan-400 to-violet-500 text-lg font-bold text-white shadow-[0_0_24px_rgba(34,211,238,0.18)]">
                   {hasCustomAvatar ? (
                     <img src={profileAvatarUrl} alt={userDisplayName} className="h-full w-full rounded-2xl object-cover" />
                   ) : (
@@ -1550,6 +1929,28 @@ export default function DashboardPage() {
               />
             </div>
           </motion.header>
+
+          <StatementImportPanel
+            rows={statementImportRows}
+            fileName={statementImportName}
+            error={statementImportError}
+            importing={importingStatement}
+            processing={statementProcessing}
+            ocrReviewRequired={statementOcrReviewRequired}
+            target={statementImportTarget}
+            onTargetChange={handleStatementImportTargetChange}
+            onFileChange={handleStatementFile}
+            onUpdateRow={updateStatementImportRow}
+            onSelectValid={handleSelectImportableRows}
+            onImport={handleImportSelectedRows}
+            onClear={() => {
+              setStatementImportRows([]);
+              setStatementImportName("");
+              setStatementImportError("");
+              setStatementImportText("");
+              setStatementOcrReviewRequired(false);
+            }}
+          />
 
           <div className="pointer-events-none fixed right-3 top-3 z-50 flex w-[min(92vw,380px)] flex-col gap-2">
             {toasts.map((toast) => (
@@ -1851,29 +2252,44 @@ export default function DashboardPage() {
             </div>
           </motion.section>
 
-          <motion.section variants={itemVariants} className={`grid gap-4 lg:grid-cols-3 ${activeTab === "family" ? "" : "hidden"}`}>
+          {activeTab === "family" ? (
+          <motion.section variants={itemVariants} className="grid min-w-0 gap-4 lg:grid-cols-3">
             <article className="frosted rounded-2xl border border-white/10 p-4">
               <h3 className="mb-3 text-base font-semibold">Receitas vs Despesas</h3>
-              <div className="h-64">
+              <p className="mb-3 text-xs text-slate-400">Competencia {monthFilter} · comparativo mensal e familiar</p>
+              {familyTotalIncome === 0 && familyTotalExpense === 0 ? (
+                <div className="chart-empty h-64">
+                  <span className="chart-empty-mark">01</span>
+                  <p>Adicione receitas e despesas para visualizar o comparativo.</p>
+                </div>
+              ) : <div className="chart-container h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={totalExpenseChart}>
-                    <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
-                    <XAxis dataKey="name" stroke="#cbd5e1" />
-                    <YAxis stroke="#cbd5e1" />
-                    <Tooltip />
+                    <CartesianGrid stroke="rgba(148,163,184,0.12)" strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" stroke="#94a3b8" tickLine={false} axisLine={false} />
+                    <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={{ background: "#0b1220", border: "1px solid rgba(148,163,184,0.2)", borderRadius: 12 }} />
+                    <Legend />
                     <Bar dataKey="income" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
                     <Bar dataKey="expenses" fill="#e11d48" radius={[8, 8, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
+              </div>}
             </article>
 
             <article className="frosted rounded-2xl border border-white/10 p-4">
               <h3 className="mb-3 text-base font-semibold">Despesas por Categoria</h3>
-              <div className="h-64">
+              <p className="mb-3 text-xs text-slate-400">Distribuicao das despesas em {monthFilter}</p>
+              {monthlyExpense === 0 ? (
+                <div className="chart-empty h-64">
+                  <span className="chart-empty-mark">02</span>
+                  <p>Nenhuma despesa nesta competencia.</p>
+                </div>
+              ) : <div className="chart-container h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Tooltip />
+                    <Tooltip contentStyle={{ background: "#0b1220", border: "1px solid rgba(148,163,184,0.2)", borderRadius: 12 }} />
+                    <Legend />
                     <Pie data={expensesByCategory} dataKey="amount" nameKey="category" outerRadius={88} innerRadius={48}>
                       {expensesByCategory.map((entry, index) => (
                         <Cell key={entry.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />
@@ -1881,18 +2297,24 @@ export default function DashboardPage() {
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
-              </div>
+              </div>}
             </article>
 
             <article className="frosted rounded-2xl border border-white/10 p-4">
               <h3 className="mb-3 text-base font-semibold">Categoria x % das Receitas</h3>
-              <div className="h-64">
+              <p className="mb-3 text-xs text-slate-400">Percentual da receita mensal comprometido por categoria</p>
+              {monthlyExpense === 0 ? (
+                <div className="chart-empty h-64">
+                  <span className="chart-empty-mark">03</span>
+                  <p>Registre despesas para comparar o comprometimento por categoria.</p>
+                </div>
+              ) : <div className="chart-container h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={commitmentByCategory}>
-                    <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
-                    <XAxis dataKey="category" stroke="#cbd5e1" />
-                    <YAxis stroke="#cbd5e1" />
-                    <Tooltip />
+                    <CartesianGrid stroke="rgba(148,163,184,0.12)" strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="category" stroke="#94a3b8" tickLine={false} axisLine={false} />
+                    <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} unit="%" />
+                    <Tooltip contentStyle={{ background: "#0b1220", border: "1px solid rgba(148,163,184,0.2)", borderRadius: 12 }} formatter={(value) => [`${value}%`, "Receita comprometida"]} />
                     <Bar dataKey="percentage" radius={[8, 8, 0, 0]}>
                       {commitmentByCategory.map((entry, index) => (
                         <Cell key={`${entry.category}-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
@@ -1900,9 +2322,10 @@ export default function DashboardPage() {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
+              </div>}
             </article>
           </motion.section>
+          ) : null}
 
           <motion.section variants={itemVariants} className={`frosted rounded-2xl border border-white/10 p-4 ${activeTab === "family" ? "" : "hidden"}`}>
             <h3 className="mb-3 text-lg font-semibold">Relatorios mensais</h3>
@@ -2004,7 +2427,7 @@ export default function DashboardPage() {
                 transition={{ duration: 0.28 }}
                 className="space-y-4"
               >
-                <motion.section variants={itemVariants} id="personal-overview" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <motion.section id="personal-overview" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {[
                     { title: "Receita Pessoal", value: brl(personalSummary.income), tone: "from-sky-500/25 to-sky-300/5" },
                     { title: "Despesas Pessoais", value: brl(personalSummary.expense), tone: "from-fuchsia-500/25 to-fuchsia-300/5" },
@@ -2023,7 +2446,189 @@ export default function DashboardPage() {
                   ))}
                 </motion.section>
 
-                <motion.section variants={itemVariants} className="grid gap-4 lg:grid-cols-3" id="personal-lists">
+                <section className="frosted rounded-2xl border border-white/10 p-4">
+                  <h3 className="text-lg font-semibold">Adicionar lancamento por texto</h3>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Escreva como falaria. A interpretacao acontece neste navegador e nada e salvo ate voce confirmar.
+                  </p>
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                    <textarea
+                      aria-label="Descreva o lancamento"
+                      className="min-h-20 flex-1 rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+                      maxLength={500}
+                      placeholder="Ex.: Gastei 45 no almoco no cartao"
+                      value={transactionDraftText}
+                      onChange={(event) => {
+                        setTransactionDraftText(event.target.value);
+                        setTransactionDraft(null);
+                        setTransactionDraftError("");
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="h-fit rounded-xl bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-500"
+                      onClick={handleParseTransactionDraft}
+                      disabled={!transactionDraftText.trim()}
+                    >
+                      Preparar rascunho
+                    </button>
+                  </div>
+                  {transactionDraftError ? (
+                    <p role="alert" className="mt-3 rounded-xl bg-rose-500/15 px-3 py-2 text-sm text-rose-100">
+                      {transactionDraftError}
+                    </p>
+                  ) : null}
+                  {transactionDraft ? (
+                    <div className="mt-4 rounded-xl border border-cyan-400/20 bg-cyan-950/20 p-3">
+                      <p className="mb-3 text-sm font-medium text-cyan-100">Revise o rascunho antes de salvar</p>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <label className="text-xs text-slate-300">
+                          Tipo
+                          <select
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-2 text-sm text-white"
+                            value={transactionDraft.type}
+                            onChange={(event) =>
+                              setTransactionDraft((draft) => ({ ...draft, type: event.target.value }))
+                            }
+                          >
+                            <option value="expense">Despesa pessoal</option>
+                            <option value="income">Receita pessoal</option>
+                          </select>
+                        </label>
+                        <label className="text-xs text-slate-300">
+                          Descricao
+                          <input
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-2 text-sm text-white"
+                            maxLength={255}
+                            value={transactionDraft.description}
+                            onChange={(event) =>
+                              setTransactionDraft((draft) => ({ ...draft, description: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label className="text-xs text-slate-300">
+                          Valor (R$)
+                          <input
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-2 text-sm text-white"
+                            inputMode="decimal"
+                            value={transactionDraft.amount}
+                            onChange={(event) =>
+                              setTransactionDraft((draft) => ({ ...draft, amount: event.target.value }))
+                            }
+                          />
+                        </label>
+                        <label className="text-xs text-slate-300">
+                          Categoria
+                          <select
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-2 text-sm text-white"
+                            value={transactionDraft.category}
+                            onChange={(event) =>
+                              setTransactionDraft((draft) => ({
+                                ...draft,
+                                category: event.target.value,
+                                categoryWasSuggested: false,
+                              }))
+                            }
+                          >
+                            {PERSONAL_CATEGORIES.map((category) => (
+                              <option key={category} value={category}>
+                                {category}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="text-xs text-slate-300 sm:col-span-2">
+                          Competencia (mes)
+                          <input
+                            className="mt-1 w-full rounded-lg border border-white/10 bg-slate-950 px-2 py-2 text-sm text-white"
+                            type="month"
+                            value={transactionDraft.competence}
+                            onChange={(event) =>
+                              setTransactionDraft((draft) => ({ ...draft, competence: event.target.value }))
+                            }
+                          />
+                        </label>
+                      </div>
+                      <p className="mt-3 text-xs text-slate-400">
+                        O tipo foi inferido pela frase; confira.{" "}
+                        {transactionDraft.categoryWasSuggested
+                          ? "Categoria sugerida pela descricao; confira se esta correta."
+                          : "Categoria nao identificada com seguranca; revise antes de salvar."}
+                        {" "}A base atual registra competencia mensal, nao a data exata nem conta/cartao.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={handleSaveTransactionDraft}
+                          disabled={savingTransactionDraft}
+                        >
+                          {savingTransactionDraft ? "Salvando..." : "Confirmar e salvar"}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-xl border border-white/15 px-4 py-2 text-sm text-slate-200 transition hover:bg-white/10"
+                          onClick={handleClearTransactionDraft}
+                          disabled={savingTransactionDraft}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+
+                <motion.section className="frosted rounded-2xl border border-white/10 p-4">
+                  <h3 className="mb-3 text-lg font-semibold">Sugestoes e alertas pessoais ({monthFilter})</h3>
+                  {personalInsightsError ? (
+                    <p role="alert" className="mb-3 rounded-xl bg-rose-500/15 px-3 py-2 text-sm text-rose-100">
+                      Nao foi possivel carregar os insights: {personalInsightsError}
+                    </p>
+                  ) : null}
+                  {personalInsights.spending_alerts.length ? (
+                    <div className="mb-4 space-y-2">
+                      {personalInsights.spending_alerts.map((alert) => (
+                        <article key={`personal-alert-${alert.category}`} className="rounded-xl bg-amber-500/15 px-3 py-2 text-sm text-amber-100">
+                          <p className="font-medium">Gasto acima do padrao: {alert.category}</p>
+                          <p>
+                            {brl(alert.amount)} no mes, {alert.change_percent}% acima da media de {brl(alert.historical_average)}
+                            {" "}dos ultimos {alert.history_months} meses.
+                          </p>
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+                  {personalInsights.category_suggestions.length ? (
+                    <div className="space-y-2">
+                      {personalInsights.category_suggestions.map((suggestion) => {
+                        const expense = personalExpenses.find((item) => item.id === suggestion.expense_id);
+                        return (
+                          <article key={`personal-suggestion-${suggestion.expense_id}`} className="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-slate-200">
+                              <span className="font-medium">{suggestion.description}</span>
+                              {" "}· sugestao: <span className="text-sky-200">{suggestion.suggested_category}</span>
+                            </p>
+                            {expense ? (
+                              <button
+                                type="button"
+                                className="rounded bg-sky-600 px-2 py-1 text-xs text-white"
+                                onClick={() => openPersonalEditModal("expense", expense)}
+                              >
+                                Revisar despesa
+                              </button>
+                            ) : null}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {!personalInsightsError && !personalInsights.spending_alerts.length && !personalInsights.category_suggestions.length ? (
+                    <p className="text-sm text-slate-400">Sem sugestoes ou desvios para este mes. Alertas de consumo aparecem com pelo menos dois meses de historico.</p>
+                  ) : null}
+                  <p className="mt-3 text-xs text-slate-500">Sugestoes nao alteram seus lancamentos. Revise e salve qualquer mudanca manualmente.</p>
+                </motion.section>
+
+                <motion.section className="grid gap-4 lg:grid-cols-3" id="personal-lists">
                   <article className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-base font-semibold">Lista de Receitas Pessoais</h3>
                     <div className="space-y-2 text-sm text-slate-300">
@@ -2148,7 +2753,7 @@ export default function DashboardPage() {
                 </motion.section>
 
                 {showPersonalIncomeForm ? (
-                  <motion.section variants={itemVariants} id="personal-income" className="frosted rounded-2xl border border-white/10 p-4">
+                  <motion.section id="personal-income" className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-lg font-semibold">Receitas Pessoais</h3>
                     <div className="grid gap-2 md:grid-cols-4">
                       <input
@@ -2185,7 +2790,7 @@ export default function DashboardPage() {
                 ) : null}
 
                 {showPersonalExpenseForm ? (
-                  <motion.section variants={itemVariants} id="personal-expenses" className="frosted rounded-2xl border border-white/10 p-4">
+                  <motion.section id="personal-expenses" className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-lg font-semibold">Despesas Pessoais</h3>
                     <div className="grid gap-2 md:grid-cols-5">
                       <input
@@ -2233,7 +2838,7 @@ export default function DashboardPage() {
                 ) : null}
 
                 {showPersonalInvestmentForm ? (
-                  <motion.section variants={itemVariants} id="personal-investments" className="frosted rounded-2xl border border-white/10 p-4">
+                  <motion.section id="personal-investments" className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-lg font-semibold">Investimentos Pessoais</h3>
                     <div className="grid gap-2 md:grid-cols-5">
                       <input
@@ -2274,33 +2879,44 @@ export default function DashboardPage() {
                   </motion.section>
                 ) : null}
 
-                <motion.section variants={itemVariants} className="grid gap-4 lg:grid-cols-3" id="personal-charts">
+                <motion.section className="grid gap-4 lg:grid-cols-3" id="personal-charts">
                   <article className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-base font-semibold">Receita x Despesa Pessoal</h3>
-                    {filteredPersonalIncomes.length === 0 && filteredPersonalExpenses.length === 0 && filteredPersonalInvestments.length === 0 ? (
-                      <p className="mb-2 text-xs text-slate-400">Sem dados no mes selecionado. Adicione lancamentos para gerar os graficos.</p>
-                    ) : null}
-                    <div className="h-64">
+                    <p className="mb-3 text-xs text-slate-400">Resumo da competencia {monthFilter}</p>
+                    {personalIncomeTotal === 0 && personalExpenseTotal === 0 && personalInvestmentTotal === 0 ? (
+                      <div className="chart-empty h-64">
+                        <span className="chart-empty-mark">01</span>
+                        <p>Adicione lancamentos neste mes para gerar o comparativo.</p>
+                      </div>
+                    ) : <div className="chart-container h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart key={`personal-income-vs-expense-${monthFilter}-${personalIncomeTotal}-${personalExpenseTotal}-${personalInvestmentTotal}`} data={personalIncomeVsExpense}>
-                          <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
-                          <XAxis dataKey="name" stroke="#cbd5e1" />
-                          <YAxis stroke="#cbd5e1" />
-                          <Tooltip />
+                          <CartesianGrid stroke="rgba(148,163,184,0.12)" strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="name" stroke="#94a3b8" tickLine={false} axisLine={false} />
+                          <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} />
+                          <Tooltip contentStyle={{ background: "#0b1220", border: "1px solid rgba(148,163,184,0.2)", borderRadius: 12 }} />
+                          <Legend />
                           <Bar dataKey="receitas" fill="#0ea5e9" radius={[8, 8, 0, 0]} minPointSize={4} />
                           <Bar dataKey="despesas" fill="#e11d48" radius={[8, 8, 0, 0]} minPointSize={4} />
                           <Bar dataKey="investimentos" fill="#8b5cf6" radius={[8, 8, 0, 0]} minPointSize={4} />
                         </BarChart>
                       </ResponsiveContainer>
-                    </div>
+                    </div>}
                   </article>
 
                   <article className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-base font-semibold">Despesas pessoais por categoria</h3>
-                    <div className="h-64">
+                    <p className="mb-3 text-xs text-slate-400">Categorias registradas em {monthFilter}</p>
+                    {personalExpensesByCategory.length === 0 ? (
+                      <div className="chart-empty h-64">
+                        <span className="chart-empty-mark">02</span>
+                        <p>Nenhuma despesa pessoal nesta competencia.</p>
+                      </div>
+                    ) : <div className="chart-container h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                          <PieChart key={`personal-expenses-${monthFilter}-${filteredPersonalExpenses.length}-${personalExpenseTotal}`}>
-                          <Tooltip />
+                        <PieChart key={`personal-expenses-${monthFilter}-${filteredPersonalExpenses.length}-${personalExpenseTotal}`}>
+                          <Tooltip contentStyle={{ background: "#0b1220", border: "1px solid rgba(148,163,184,0.2)", borderRadius: 12 }} />
+                          <Legend />
                           <Pie data={personalExpensesByCategory} dataKey="amount" nameKey="category" outerRadius={88} innerRadius={48} minAngle={6}>
                             {personalExpensesByCategory.map((entry, index) => (
                               <Cell key={entry.category} fill={PIE_COLORS[index % PIE_COLORS.length]} />
@@ -2308,26 +2924,32 @@ export default function DashboardPage() {
                           </Pie>
                         </PieChart>
                       </ResponsiveContainer>
-                    </div>
+                    </div>}
                   </article>
 
                   <article className="frosted rounded-2xl border border-white/10 p-4">
                     <h3 className="mb-3 text-base font-semibold">Evolucao dos investimentos</h3>
-                    <div className="h-64">
+                    <p className="mb-3 text-xs text-slate-400">Historico mensal de aportes</p>
+                    {personalInvestmentsEvolution.length === 0 ? (
+                      <div className="chart-empty h-64">
+                        <span className="chart-empty-mark">03</span>
+                        <p>Seus aportes aparecerao aqui quando forem registrados.</p>
+                      </div>
+                    ) : <div className="chart-container h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart key={`personal-investments-${monthFilter}-${personalInvestmentsEvolutionChart.length}-${personalInvestmentTotal}`} data={personalInvestmentsEvolutionChart}>
-                          <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
-                          <XAxis dataKey="mes" stroke="#cbd5e1" />
-                          <YAxis stroke="#cbd5e1" />
-                          <Tooltip />
+                        <BarChart key={`personal-investments-${monthFilter}-${personalInvestmentsEvolution.length}-${personalInvestmentTotal}`} data={personalInvestmentsEvolution}>
+                          <CartesianGrid stroke="rgba(148,163,184,0.12)" strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="mes" stroke="#94a3b8" tickLine={false} axisLine={false} />
+                          <YAxis stroke="#94a3b8" tickLine={false} axisLine={false} />
+                          <Tooltip contentStyle={{ background: "#0b1220", border: "1px solid rgba(148,163,184,0.2)", borderRadius: 12 }} />
                           <Bar dataKey="valor" fill="#8b5cf6" radius={[8, 8, 0, 0]} minPointSize={4} />
                         </BarChart>
                       </ResponsiveContainer>
-                    </div>
+                    </div>}
                   </article>
                 </motion.section>
 
-                <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+                <motion.section className="frosted rounded-2xl border border-white/10 p-4">
                   <h3 className="mb-3 text-lg font-semibold">Extrato pessoal do mes ({monthFilter})</h3>
                   <div className="grid gap-3 md:grid-cols-3">
                     <div>
@@ -2423,7 +3045,7 @@ export default function DashboardPage() {
                   </div>
                 </motion.section>
 
-                <motion.section variants={itemVariants} className="frosted rounded-2xl border border-white/10 p-4">
+                <motion.section className="frosted rounded-2xl border border-white/10 p-4">
                   <h3 className="mb-2 text-lg font-semibold">Resumo pessoal da API</h3>
                   <p className="text-sm text-slate-300">
                     Receita: {brl(personalSummary.income)} | Despesas: {brl(personalSummary.expense)} | Investimentos: {brl(personalSummary.investments)} | Saldo: {brl(personalSummary.balance)}

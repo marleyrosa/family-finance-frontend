@@ -283,6 +283,10 @@ export async function getPersonalSummary(token, mes, ano) {
   return apiRequest(`/personal/summary?mes=${mes}&ano=${ano}`, {}, token);
 }
 
+export async function getPersonalInsights(token, mes, ano) {
+  return apiRequest(`/personal/insights?mes=${mes}&ano=${ano}`, {}, token);
+}
+
 async function fetchBinary(path, token) {
   const headers = {};
   if (token) {

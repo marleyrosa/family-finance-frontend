@@ -9,14 +9,35 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #070c12;
+  background: #070b13;
   color: #e6eef8;
   font-family: Manrope, sans-serif;
 }
 
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+label,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible,
+label:focus-within {
+  outline: 2px solid rgba(103, 232, 249, 0.9);
+  outline-offset: 3px;
+}
+
 a {
   text-decoration: none;
-  color: #464feb;
+  color: inherit;
 }
 
 tr th,
@@ -29,7 +50,89 @@ tr th {
 }
 
 .frosted {
-  background: linear-gradient(180deg, rgba(19, 31, 45, 0.82), rgba(9, 16, 24, 0.78));
+  border-color: rgba(148, 163, 184, 0.14);
+  background: linear-gradient(145deg, rgba(15, 25, 42, 0.92), rgba(8, 13, 25, 0.88));
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.035);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
+}
+
+.app-shell {
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse at 2% 2%, rgba(34, 211, 238, 0.1), transparent 34rem),
+    radial-gradient(ellipse at 96% 8%, rgba(139, 92, 246, 0.13), transparent 38rem),
+    radial-gradient(ellipse at 60% 100%, rgba(14, 165, 233, 0.06), transparent 42rem),
+    linear-gradient(180deg, #070b13 0%, #0b1020 58%, #080c15 100%);
+}
+
+.app-shell::before {
+  position: fixed;
+  z-index: -1;
+  pointer-events: none;
+  inset: 0;
+  background-image: linear-gradient(rgba(148, 163, 184, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.025) 1px, transparent 1px);
+  background-size: 44px 44px;
+  content: "";
+  mask-image: linear-gradient(to bottom, black, transparent 80%);
+}
+
+.chart-container {
+  min-width: 0;
+  min-height: 16rem;
+}
+
+.chart-empty {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  border: 1px dashed rgba(148, 163, 184, 0.18);
+  border-radius: 1rem;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.55), rgba(8, 13, 25, 0.5));
+  padding: 1.25rem;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.chart-empty-mark {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid rgba(103, 232, 249, 0.22);
+  border-radius: 0.85rem;
+  background: rgba(34, 211, 238, 0.08);
+  color: #67e8f9;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+header button {
+  box-shadow: 0 8px 22px rgba(2, 6, 23, 0.24);
+}
+
+header button:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+
+header button:active {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
