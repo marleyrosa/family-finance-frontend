@@ -1,86 +1,67 @@
-# Frontend - FamilYMoney
+# FamilYMoney
 
-Aplicacao Next.js com dashboard financeiro moderno, dark mode, graficos animados e suporte PWA.
+### Finanças da família organizadas, em um app só — e no ar
 
-## Stack
+> **About (EN):** FamilYMoney is a family finance web app in production: a Next.js frontend (PWA, dark mode, animated charts) and a FastAPI + PostgreSQL backend. It tracks income and expenses, supports partner invitations, reads Brazilian boleto bills from PDF uploads, and exports monthly reports — built to be used daily by a real family.
 
-- Next.js (App Router)
-- TailwindCSS
-- Recharts
-- Framer Motion
-- PWA (manifest + service worker)
+## 📌 O que é
 
-## Funcionalidades
+O **FamilYMoney** é um aplicativo web de **finanças familiares** criado para uso real, diário, de uma família de verdade: registrar receitas e despesas, enxergar o saldo, acompanhar gráficos e fechar o mês sem planilha confusa.
 
-- Login e cadastro por email
-- Cards de resumo (despesas, renda, saldo)
-- Graficos: linha, pizza e barras
-- Convite de parceiro por email
-- Upload de boleto PDF
-- Exportacao de relatorios CSV/PDF
-- Filtro por mes e ano
+O sistema está **em produção e acessível online**:
 
-## Rodar localmente
+- 🌐 **App:** https://family-finance-frontend-7cc4.onrender.com
+- ⚙️ **API:** https://family-finance-backend-0r19.onrender.com
 
-1. Instalar dependencias:
+## ✨ O que o app faz
+
+- **Login e cadastro** por e-mail, com autenticação JWT;
+- **Dashboard** com cards de resumo (receitas, despesas e saldo) e gráficos de linha, pizza e barras;
+- **Uso em casal/família:** convite de parceiro por e-mail e saldo familiar consolidado;
+- **Upload de boleto em PDF** — o app lê o documento e ajuda a lançar a conta;
+- **Relatórios mensais** com comparativo mês atual × anterior, economia e categorias, com exportação em **CSV e PDF**;
+- **Busca e filtros** por mês, ano, descrição, categoria e usuário;
+- **PWA instalável**, com dark mode, página offline e lembretes financeiros locais.
+
+## 🧱 Estrutura do projeto
+
+| Parte | Repositório | Stack |
+|---|---|---|
+| Frontend | [family-finance-frontend](https://github.com/marleyrosa/family-finance-frontend) | Next.js (App Router), TailwindCSS, Recharts, Framer Motion, PWA |
+| Backend | [family-finance-backend](https://github.com/marleyrosa/family-finance-backend) | FastAPI, PostgreSQL, SQLAlchemy, Pydantic, JWT, pdfplumber (leitura de boletos em PDF) |
+
+## ▶️ Como executar localmente
+
+**Backend:**
+
+```bash
+# 1. Suba o PostgreSQL
+docker compose up -d
+
+# 2. Ambiente virtual e dependências
+python -m venv .venv
+pip install -r requirements.txt
+
+# 3. Configure as variáveis (a partir do exemplo)
+copy .env.example .env
+
+# 4. Rode a API
+uvicorn app.main:app --reload --port 8000
+# Swagger em http://localhost:8000/docs
+```
+
+**Frontend:**
 
 ```bash
 npm install
-```
-
-1. Configurar variaveis:
-
-```bash
 copy .env.local.example .env.local
-```
-
-1. Rodar app:
-
-```bash
 npm run dev
+# Acesse http://localhost:3000
 ```
 
-Acesso: <http://localhost:3000>
+## 👤 Autor
 
-## V2 Todo Completion (Validated)
+**Marley Rosa Luciano** — Engenheiro, mestre em Engenharia Elétrica, Plant Modeling Engineer (XiL) na indústria automotiva e professor de pós-graduação na PUC Minas.
 
-- [x] User avatar/profile
-- [x] Transaction owner
-- [x] Edit income
-- [x] Delete income
-- [x] Edit expense
-- [x] Delete expense
-- [x] Recent transactions timeline
-- [x] Responsive sidebar navigation
-- [x] Family balance card
-- [x] Colorful charts
-- [x] Automatic insights
-- [x] Stronger Framer Motion animations (validated after successful build on 2026-07-03)
-
-## V2.2 Todo Completion (Validated after successful build on 2026-07-03)
-
-- [x] Edit Income
-- [x] Edit Expense
-- [x] Delete Income
-- [x] Delete Expense
-- [x] User Avatar (upload + localStorage + fallback por iniciais)
-
-## V2.3 Todo Completion (Validated after successful build on 2026-07-03)
-
-- [x] PWA manifest atualizado para webmanifest
-- [x] Pagina offline dedicada
-- [x] Service worker com fallback offline e suporte a notificacoes locais
-- [x] Registro PWA com captura de beforeinstallprompt
-- [x] Busca de transacoes por descricao/categoria/usuario
-- [x] Exportacao de relatorio PDF mensal
-- [x] Bloco de relatorios mensais (mes atual vs anterior, economia e categorias)
-- [x] Acao para ativar notificacoes e lembretes financeiros locais
-
-## Edit/Delete Route Validation (Validated after successful build and deployed API checks on 2026-07-03)
-
-- [x] Frontend URLs alinhadas com rotas deployadas (/expenses/{id} e /incomes/{id})
-- [x] Refresh do dashboard apos edit/delete
-- [x] Verificacao: Edit Income
-- [x] Verificacao: Edit Expense
-- [x] Verificacao: Delete Income
-- [x] Verificacao: Delete Expense
+- GitHub: [github.com/marleyrosa](https://github.com/marleyrosa)
+- LinkedIn: [linkedin.com/in/marley-rosa-luciano-b32101104](https://www.linkedin.com/in/marley-rosa-luciano-b32101104)
